@@ -40,9 +40,9 @@ The concept of the 'address' is rather generalized in the context of this module
 
 =head1 SETUP
 
-This module will probably be used from inside a RADIUS or a DHCP server. The following settings are present inside the lib/IPv6/Static/Settings.pm. Edit as necessary.
+This module will probably be used from inside a RADIUS or a DHCP server. The following settings are present inside the F<lib/IPv6/Static/Settings.pm>. Edit as necessary.
 
-These configuration constants are defined in lib/Static/Settings.pm. The choice to use the constant pragma may seem awkward, but Perl can do some compile-time optimizations that may help this module go just a trifle faster. Obviously, subroutines can be installed in the place of those constants without having to heavilly refactor everything. 
+These configuration constants are defined in F<lib/IPv6/Static/Settings.pm>. The choice to use the constant pragma may seem awkward, but Perl can do some compile-time optimizations that may help this module go just a trifle faster. Obviously, subroutines can be installed in the place of those constants without having to heavilly refactor everything. 
 
 This module has been tested to work with MySQL. 
 
@@ -92,11 +92,11 @@ If DOUBLE_LOGIN_CHECK_LEVEL is 0, no double login check is performed. If set to 
 
 =item User groups
 
-The handle_user_login and handle_user_logout expect a usable database handle, a group name (string) and a username (string). The semantics of the group name are opaque as far as this module is concerned. The group can be used to separate the subscribers to arbitrary (from this module's perspective) groups. 
+The C<handle_user_login> and C<handle_user_logout> functions expect a usable database handle, a group name (string) and a username (string). The semantics of the group name are opaque as far as this module is concerned. The group can be used to separate the subscribers to arbitrary (from this module's perspective) groups. 
 
 =item Calling conventions
 
-Both handle_user_login and handle_user_logout should be called inside an eval block. Better yet, use Try::Tiny if possible. The handle_user_login will return a hashref. The 'record' key of that hashref contains the user record. Use the 'address' key to get the address number. The 'logger' key of the returned hashref contains a logger object (see bellow). 
+Both C<handle_user_login> and C<handle_user_logout> should be called inside an eval block. Better yet, use L<Try::Tiny> if possible. The C<handle_user_login> function will return a hashref. The 'record' key of that hashref contains the user record. Use the 'address' key to get the address number. The 'logger' key of the returned hashref contains a logger object (see bellow). The C<handle_user_logout> does not return anything. 
 
 In case of B<any> error, both functions will die with an appropriate backtrace. 
 
@@ -108,7 +108,7 @@ The returned hashref of a successful handle_user_login call contains a 'logger' 
 
 =head1 CONVERSION TO REAL ADDRESSES
 
-This module only handles the assignment of a unique non-negative number offset to each username and group pair. Choosing an appropriate IPv6 or IPv4 address using that number offset is not handled by this module. The author has available a rudimentary module at https://github.com/aduitsis/IPv6Address. Pull requests welcome. 
+This module only handles the assignment of a unique non-negative number offset to each username and group pair. Choosing an appropriate IPv6 or IPv4 address using that number offset is not handled by this module. The author has available a rudimentary module at L<http://github.com/aduitsis/IPv6Address>. Pull requests welcome. 
 
 =head1 PERFORMANCE MEASUREMENT
 
@@ -153,11 +153,11 @@ Use these declarations for the tables that this module uses:
 
 =head1 CONSISTENCY CHECKS
 
-The bin/consistency_check.pl program can be used to run some common place checks on the consistency of the database. 
+The F<bin/consistency_check.pl> program can be used to run some common place checks on the consistency of the database. 
 
 =head1 CODE
 
-This code could have been written in an infinitely better way using a dozen modules from CPAN. However, care has been taken to use core Perl modules whenever possible to make installing easier. An exception is DBI and DBD::Mysql along with Term::ReadKey for the consistency checker. 
+This code could have been written in an infinitely better way using a dozen modules from CPAN. However, care has been taken to use core Perl modules whenever possible to make installing easier. An exception is L<DBI> and L<DBD::Mysql> along with L<Term::ReadKey> for the consistency checker. 
 
 
 =head1 LICENSE
@@ -174,6 +174,6 @@ This module may cause your RADIUS server or whatever else you plug it into to go
 
 =head1 AUTHOR 
 
-Athanasios Douitsis <aduitsis@cpan.org>
+Athanasios Douitsis L<mailto:aduitsis@cpan.org>
 
 
