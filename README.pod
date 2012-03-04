@@ -1,0 +1,179 @@
+=head1 NAME
+
+IPv6::Static - On the fly address assignment of persistent addresses for IPv6 (or IPv4)
+
+=head1 SYNOPSIS
+
+ use IPv6::Static;
+
+ #setup a $dbh handle, adjust IPv6::Static::Settings with the supported user groups, review other settings
+
+ # when a user belonging to a group logs in:
+ eval { #or you could use Try::Tiny ... 
+ 	my $ret = IPv6::Static::handle_user_login($dbh,$group,$user) ; 
+	print $ret->{record}->{address}."\n";
+	print $ret->{logger}->to_string."\n";
+ };
+ if($@) { ...
+
+ # then use the $address_number to enumerate an IPv6 address for the user 
+
+ # when a user logs out:
+ eval {
+ 	IPv6::Static::handle_user_logout($dbh,$group,$user) ;
+ };
+ if($@) { ...
+
+
+ # get performance stats
+ say Dumper(\%IPv6::Static::stats);
+
+=head1 DESCRIPTION
+
+This module can be used to facilitate the assignment of static (eg persistent) addresses to subscribers, when the user base is unknown or inaccessible. 
+
+In many cases, an access service provider (ie a broadband service provider using a RADIUS server) needs to assign static addresses to its subscribers. When one has a database or LDAP server containing an inclusive list of the subscribers, this is probably trivial and can be solved by creating an appropriate attribute which represents the address and then setting a unique value for each entry. However, in the case where neither the number of the users nor the usernames are known in advance, this cannot be done quite as easily. This module may in some cases be able to assist. 
+
+IPv6::Static uses a database table (MySQL at this time) to cache address values assigned to users. When a new user connects for the first time, the library will either create a new row if the preconfigured maximum number of rows hasn't been reached yet, or overwrite the least recently used row with the new username. That way, users that are active and use the service will (hopefully) never be deleted and users that leave the system will eventually get overwritten by other new users. The table is appropriately indexed so that the relevant operations (find the next available address number, find the least recently used record) can be concluded as fast as possible. Reasonable safeguards are in place to make sure that inconsistencies (ie same address to two different users) cannot easily appear. 
+
+The concept of the 'address' is rather generalized in the context of this module. The module assigns a non-negative number for each user. This number can be considered as an 'offset' of sorts that can be applied to an IPv6 prefix or an IPv4 subnet to obtain a user unique address. For example, if the IPv6 prefix that users draw their smaller prefixes (say /64s) from is 2001:648:2001::/48, then if the module returns an offset of 7 for a user, then the prefix that should be assigned us 2001:648:2001:7::/64. Likewise, this /48 prefix cannot use an offset of more that 65535. So in that case the module should be configured to not assign any new offsets beyond 65535. 
+
+=head1 SETUP
+
+This module will probably be used from inside a RADIUS or a DHCP server. The following settings are present inside the lib/IPv6/Static/Settings.pm. Edit as necessary.
+
+These configuration constants are defined in lib/Static/Settings.pm. The choice to use the constant pragma may seem awkward, but Perl can do some compile-time optimizations that may help this module go just a trifle faster. Obviously, subroutines can be installed in the place of those constants without having to heavilly refactor everything. 
+
+This module has been tested to work with MySQL. 
+
+=over 4
+
+=item GROUPS
+
+This constant is a reference to a hash containing keys as group names and hash refs as values. Each hash ref MUST contain at least an 'id' key, which is the group id of that group inside the db and a 'limit' key, which is the maximum tolerable number of entries for that group. 
+
+=item TABLE
+
+The table name where the addresses are stored. 
+
+=item JOURNAL_TABLE and LOG_TABLE
+
+The tables where a journal log and an accounting log of the performed operations is stored.
+
+=item W
+
+An interval (in seconds) over which the performance statistics are calculated.
+
+=item SLACK
+
+In case IN_USE is not used, SLACK will cause entries newer than SLACK seconds not to be updated when user login.
+
+=item ENABLE_SLACK 
+
+If true(1), SLACK checking will be used. Note that SLACK has no effect if IN_USE checking is enabled. 
+
+=item IN_USE_WHERE IN_USE_SET
+
+These variables control whether the module will double as an online user tracking meachnism. It is recommended that the default values are left as-is, or be both set to ''. When not set to '', IN_USE_SET alters the queries executed by the code to make sure that when the user logs in or out the in_use boolean will be set to 1 or 0. Likewise, IN_USE_WHERE enables some checks to make sure that when the user logs in, the in_use record should not be already 1. Also, when a user record is to be replaced, its in_use must be 0. 
+
+=item WARRANTY
+
+If set to non-zero, no record newer than WARRANTY seconds will be replaced. 
+
+=item DOUBLE_LOGIN_CHECK_LEVEL
+
+If DOUBLE_LOGIN_CHECK_LEVEL is 0, no double login check is performed. If set to 1, check is performed but only a warning is issued if the user is already logged in. If 2, the module dies with an appropriate backtrace. This value is used in conjunction with the IN_USE_* variable mentioned earlier.
+
+=back
+
+=head1 USAGE
+
+=over 4
+
+=item User groups
+
+The handle_user_login and handle_user_logout expect a usable database handle, a group name (string) and a username (string). The semantics of the group name are opaque as far as this module is concerned. The group can be used to separate the subscribers to arbitrary (from this module's perspective) groups. 
+
+=item Calling conventions
+
+Both handle_user_login and handle_user_logout should be called inside an eval block. Better yet, use Try::Tiny if possible. The handle_user_login will return a hashref. The 'record' key of that hashref contains the user record. Use the 'address' key to get the address number. The 'logger' key of the returned hashref contains a logger object (see bellow). 
+
+In case of B<any> error, both functions will die with an appropriate backtrace. 
+
+=item IPv6::Static::Logger
+
+The returned hashref of a successful handle_user_login call contains a 'logger' key pointing to an IPv6::Static::Logger object. This object contains an account of the actions that were taken by the module while handling this call. Typically one would want to use the 'to_string' method of that object to get a serialized string of everything that was done. 
+
+=back
+
+=head1 CONVERSION TO REAL ADDRESSES
+
+This module only handles the assignment of a unique non-negative number offset to each username and group pair. Choosing an appropriate IPv6 or IPv4 address using that number offset is not handled by this module. The author has available a rudimentary module at https://github.com/aduitsis/IPv6Address. Pull requests welcome. 
+
+=head1 PERFORMANCE MEASUREMENT
+
+This module measures the time of all its queries and operations so that the administrator can have a clear picture of its performance. The %IPv6::Static::stats hash contains keys with the various available metrics. Each key points to a hashref whose 'average' key contains the exponential moving average over a period of W (see relevant constant) for that key. For example, 
+
+ say $IPv6::Static::stats{'find oldest record query'}->{average}; 
+
+=head1 DATABASE SCHEMA
+
+Use these declarations for the tables that this module uses:
+
+ CREATE TABLE `ipv6_static` (
+ 	`group_id` int(10) unsigned NOT NULL,
+ 	`username` varchar(64) NOT NULL,
+ 	`address` int(10) unsigned NOT NULL,
+ 	`changetime` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+ 	`createtime` datetime NOT NULL,
+ 	`active` BOOLEAN NOT NULL DEFAULT 1,
+ 	`in_use` BOOLEAN NOT NULL DEFAULT 1,
+ 	UNIQUE KEY `s1` (`group_id`,`username`),
+ 	KEY `s2` (`group_id`,`in_use`,`changetime`),
+ 	UNIQUE KEY `s3` (`group_id`,`address`)
+ );
+ CREATE TABLE `ipv6_journal` (
+ 	`group_id` int(10) unsigned NOT NULL,
+ 	`username` varchar(64) NOT NULL,
+ 	`address` int(10) unsigned NOT NULL,
+ 	`createtime` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+ 	`end` tinyint DEFAULT 0,
+ 	 KEY `s1` (`group_id`,`username`),
+ 	 KEY `s2` (`createtime`)
+ );
+ CREATE TABLE `ipv6_log` (
+ 	`group_id` int(10) unsigned NOT NULL,
+ 	`username` varchar(64) NOT NULL,
+ 	`address` int(10) unsigned NOT NULL,
+ 	`starttime` datetime NOT NULL,
+ 	`stoptime` datetime NOT NULL,
+ 	KEY `s1` (`group_id`,`username`),
+ 	KEY `s2` (`starttime`,`stoptime`)
+ );
+
+=head1 CONSISTENCY CHECKS
+
+The bin/consistency_check.pl program can be used to run some common place checks on the consistency of the database. 
+
+=head1 CODE
+
+This code could have been written in an infinitely better way using a dozen modules from CPAN. However, care has been taken to use core Perl modules whenever possible to make installing easier. An exception is DBI and DBD::Mysql along with Term::ReadKey for the consistency checker. 
+
+
+=head1 LICENSE
+
+At this point, not yet decided. To be continued. In the meantime, use the module only for noble purposes. 
+
+=head1 BUGS
+
+Surely there are more than a few. To report, open an issue at github, make a pull request, mail the author, do whatever strikes your fancy. Anything is acceptable. 
+
+=head1 DISCLAIMER
+
+This module may cause your RADIUS server or whatever else you plug it into to go critical. The author is not  responsible for whatever happens. 
+
+=head1 AUTHOR 
+
+Athanasios Douitsis <aduitsis@cpan.org>
+
+
