@@ -31,6 +31,7 @@ sub update_stat {
 	if ( ! exists( $stats{$name} ) ) {
 		$stats{$name}->{previous_time} = time;
 		$stats{$name}->{average} = $value; # we initialize the average to the first observation 
+		$stats{$name}->{counter} = 0; # we initialize the counter to (what else?) zero
 	} 
 	else {
 		my $now = time;
@@ -40,6 +41,7 @@ sub update_stat {
 		# we use an exponential moving average and a which is a function of delta_t
 		# see http://en.wikipedia.org/wiki/Moving_average#Application_to_measuring_computer_performance
 		$stats{$name}->{average} = $a * $value   +   ( 1 - $a ) * $stats{$name}->{average} ; 
+		$stats{$name}->{counter} ++ ;
 	}
 	return;
 }
@@ -73,8 +75,8 @@ sub get_user_record {
 	my $sth = $dbh->prepare('SELECT *,UNIX_TIMESTAMP()-UNIX_TIMESTAMP(changetime) as slack FROM '.TABLE.' WHERE group_id=? AND username=?') or confess $dbh->errstr;
 	$sth->execute($group_id,$username) or confess $sth->errstr;
 	my $dt = time - $t1;
-	update_stat('get user record',$dt);
-	update_stat('everything',$dt);
+	update_stat('get user record query',$dt);
+	update_stat('all queries',$dt);
 	
 	return $sth->fetchrow_hashref; 
 }
@@ -95,7 +97,7 @@ sub get_address_record {
 	$sth->execute($group_id,$address) or confess $sth->errstr;
 	my $dt = time - $t1;
 	update_stat('get address record query',$dt);
-	update_stat('everything',$dt);
+	update_stat('all queries',$dt);
 	return $sth->fetchrow_hashref; 
 }
 
@@ -109,7 +111,7 @@ sub get_record_count {
 
 	my $dt = time - $t1;
 	update_stat('get record count query',$dt);
-	update_stat('everything',$dt);
+	update_stat('all queries',$dt);
 
 	my $result = $sth->fetchrow_hashref;
 	if( ! defined($result) ) {
@@ -133,10 +135,19 @@ sub create_new_record {
 
 	my $dt = time - $t1;
 	update_stat('create new record query',$dt);
-	update_stat('everything',$dt);
+	update_stat('all queries',$dt);
 
 	return;
 }
+
+=item B<update_record> ($dbh,$group_id,$old_username,$new_username)
+
+Changes the record with username=$old_username to $new_username. 
+Creatime is updated, since this is a "new" record as well as changetime
+which is updated automatically by the db. If the IN_USE_SET is set
+appropriately, the in_use field will be set to 1 as well. 
+
+=cut
 
 sub update_record {
 	defined( my $dbh = shift ) or confess 'incorrect call';
@@ -152,7 +163,7 @@ sub update_record {
 
 	my $dt = time - $t1;
 	update_stat('update record query',$dt);
-	update_stat('everything',$dt);
+	update_stat('all queries',$dt);
 
 	return;
 }
@@ -168,7 +179,7 @@ sub find_oldest_record {
 
 	my $dt = time - $t1;
 	update_stat('find oldest record query',$dt);
-	update_stat('everything',$dt);
+	update_stat('all queries',$dt);
 
 	my $result = $sth->fetchrow_hashref;
 	if( ! defined($result) ) {
@@ -200,7 +211,7 @@ sub refresh_record {
 
 	my $dt = time - $t1;
 	update_stat('refresh record query',$dt);
-	update_stat('everything',$dt);
+	update_stat('all queries',$dt);
 
 	return;
 }	
@@ -217,7 +228,7 @@ sub dump_record {
 
 	my $dt = time - $t1;
 	update_stat('dump record query',$dt);
-	update_stat('everything',$dt);
+	update_stat('all queries',$dt);
 
 	my $result = $sth->fetchrow_hashref; 
 	if( ! defined($result) ) {
@@ -241,7 +252,7 @@ sub set_in_use_user {
 
 	my $dt = time - $t1;
 	update_stat('update in_use query',$dt);
-	update_stat('everything',$dt);
+	update_stat('all queries',$dt);
 	
 	return;
 }
@@ -272,7 +283,7 @@ sub journal_entry {
 
 	my $dt = time - $t1;
 	update_stat('journal entry query',$dt);
-	update_stat('everything',$dt);
+	update_stat('all queries',$dt);
 
 	return;
 }	
@@ -292,7 +303,7 @@ sub log_entry {
 
 	my $dt = time - $t1;
 	update_stat('log entry query',$dt);
-	update_stat('everything',$dt);
+	update_stat('all queries',$dt);
 
 	return;
 }	
@@ -313,7 +324,7 @@ sub unlock_tables {
 
 Handles the event of a user logout. It should only be used in the case where 
 the is_use field is actually used. Otherwise, it is not required to call this
-function at all. If the IN_USE
+function at all. 
 
 =cut
 
@@ -324,6 +335,7 @@ sub handle_user_logout {
 
 	# setup a logger
 	my $logger = IPv6::Static::Logger->new('DEBUG');
+
 	my $t1 = time;
 	
 	my $group_id = get_group($group_name)->{id};
@@ -341,6 +353,10 @@ sub handle_user_logout {
 			else {
 				$logger->info('Setting in_use=0 for: '.record2str($user_record) );
 				set_in_use_user($dbh,$group_id,$username,0);
+
+				my $dt = time - $t1;
+				update_stat('user logout path',$dt);
+
 				return { record => $user_record , logger => $logger };
 			}
 		}
@@ -355,6 +371,36 @@ sub handle_user_logout {
 	
 }
 
+=item B<handle_user_logout_quick ($dbh,$group_name,$username)>
+
+The _quick version just nukes the in_use field to 0 blindly.  
+Please use the C<handle_user_logout> proper unless you really do not want to 
+know about errors.
+
+=cut
+
+sub handle_user_logout_quick {
+	defined( my $dbh = shift ) or confess 'incorrect call';
+	defined( my $group_name = shift ) or confess 'incorrect call';
+	defined( my $username = shift ) or confess 'incorrect call';
+
+	# setup a logger
+	my $logger = IPv6::Static::Logger->new('DEBUG');
+
+	my $t1 = time;
+	
+	my $group_id = get_group($group_name)->{id};
+
+	if(! defined( $group_id ) ) {
+		confess "no group id for $group_name";
+	}
+
+	set_in_use_user($dbh,$group_id,$username,0);
+	my $dt = time - $t1;
+	update_stat('QUICK user logout path',$dt);	
+
+	return;	
+}
 
 sub handle_user_login {
 	defined( my $dbh = shift ) or confess 'incorrect call';
@@ -406,7 +452,7 @@ sub handle_user_login {
 		unlock_tables($dbh);
 
 		my $dt = time - $t1;
-		update_stat('get existing record',$dt);
+		update_stat('get existing record login path',$dt);
 
 		return { record => $user_record , logger => $logger } ;
 
@@ -452,7 +498,7 @@ sub handle_user_login {
 				log_entry($dbh,$group_id,$username,$old_record->{address},$old_record->{createtime});
 
 				my $dt = time - $t1;
-				update_stat('update record',$dt);
+				update_stat('update record login path',$dt);
 
 				return { record => $new_record , logger => $logger };
 			}
@@ -475,7 +521,7 @@ sub handle_user_login {
 				$logger->info('new record created: '.record2str($user_record));
 
 				my $dt = time - $t1;
-				update_stat('create record',$dt);
+				update_stat('create record login path',$dt);
 
 				return { record => $user_record , logger => $logger } ;
 			}

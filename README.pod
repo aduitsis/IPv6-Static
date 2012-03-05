@@ -96,8 +96,7 @@ The C<handle_user_login> and C<handle_user_logout> functions expect a usable dat
 
 =item Calling conventions
 
-Both C<handle_user_login> and C<handle_user_logout> should be called inside an eval block. Better yet, use L<Try::Tiny> if possible. The C<handle_user_login> function will return a hashref. The 'record' key of that hashref contains the user record. Use the 'address' key to get the address number. The 'logger' key of the returned hashref contains a logger object (see bellow). The C<handle_user_logout> does not return anything. 
-
+Both C<handle_user_login> and C<handle_user_logout> should be called inside an eval block. Better yet, use L<Try::Tiny> if possible. The C<handle_user_login> function will return a hashref. The 'record' key of that hashref contains the user record. Use the 'address' key to get the address number. The 'logger' key of the returned hashref contains a logger object (see bellow). The C<handle_user_logout> does return the user record as well using the same format and semantics as C<handle_user_login>, but it is recommended not to use the returned values. Apart from the C<handle_user_logout>, there is also the C<handle_user_logout_quick> that does not include all the internal checks of C<handle_user_logout> and returns undef. 
 In case of B<any> error, both functions will die with an appropriate backtrace. 
 
 =item IPv6::Static::Logger

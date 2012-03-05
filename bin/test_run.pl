@@ -44,18 +44,18 @@ my @svc_time;
 
 for(1..$iterations) {
 	my $user = 'user'.int(rand($users));
-	print $user."\n";
+	$DEBUG && print STDERR $user."\n";
 	eval {
 		my $t0 = time;
 		my $n = IPv6::Static::handle_user_login($dbh,$group,$user) ;
 		my $t1 = time;
-		printf STDERR "%.4f seconds\n", $t1-$t0;
+		$DEBUG && printf STDERR "%.4f seconds\n", $t1-$t0;
 		push @svc_time,($t1-$t0);
 
 		#user logs out - put this in an eval block separately before going into production
 		IPv6::Static::handle_user_logout($dbh,$group,$user);
-		print $n->{record}->{address}."\n";
-		print $n->{logger}->to_string."\n";
+		$DEBUG && print STDERR $n->{record}->{address}."\n";
+		$DEBUG && print STDERR $n->{logger}->to_string."\n";
 	};
 	if($@) {
 		print "failed to handle user. Reason: $@ \n";
