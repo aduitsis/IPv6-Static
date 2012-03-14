@@ -67,6 +67,7 @@ for(1..$iterations) {
 }
 
 print Dumper(\%IPv6::Static::stats)."\n";
+print join(' ',map({ "[ $_ : avg=".sprintf("%.1f",1000*$IPv6::Static::stats{$_}->{average}).',count='.$IPv6::Static::stats{$_}->{counter}.' ]' } (keys %IPv6::Static::stats) ))."\n";
 	
 
 print scalar(sum(@svc_time)/ @svc_time)."\n";

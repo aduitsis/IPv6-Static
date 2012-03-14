@@ -256,6 +256,23 @@ sub set_in_use_user {
 	
 	return;
 }
+
+sub set_in_use_user_quick {
+	defined( my $dbh = shift ) or confess 'incorrect call';
+	defined( my $username = shift ) or confess 'incorrect call';
+	defined( my $in_use = shift ) or confess 'incorrect call';
+
+	my $t1 = time;
+
+	my $sth = $dbh->prepare('UPDATE '.TABLE.' SET in_use=? WHERE username=?') or confess $dbh->errstr;
+	$sth->execute($in_use,$group_id,$username) or confess $sth->errstr;
+
+	my $dt = time - $t1;
+	update_stat('QUICK update in_use query',$dt);
+	update_stat('all queries',$dt);
+	
+	return;
+}
 	
 
 sub record2str {
@@ -373,9 +390,11 @@ sub handle_user_logout {
 
 =item B<handle_user_logout_quick ($dbh,$group_name,$username)>
 
-The _quick version just nukes the in_use field to 0 blindly.  
+The _quick version just nukes the in_use field to 0 blindly. B<It also assumes 
+that each username is unique, regardless of group.>
 Please use the C<handle_user_logout> proper unless you really do not want to 
-know about errors.
+know about errors and you are really certain that each username is unique
+in your problem domain regardless of group.
 
 =cut
 
@@ -389,13 +408,7 @@ sub handle_user_logout_quick {
 
 	my $t1 = time;
 	
-	my $group_id = get_group($group_name)->{id};
-
-	if(! defined( $group_id ) ) {
-		confess "no group id for $group_name";
-	}
-
-	set_in_use_user($dbh,$group_id,$username,0);
+	set_in_use_user_quick($dbh,$username,0);
 	my $dt = time - $t1;
 	update_stat('QUICK user logout path',$dt);	
 
