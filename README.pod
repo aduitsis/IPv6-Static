@@ -129,7 +129,7 @@ Use these declarations for the tables that this module uses:
  	`createtime` datetime NOT NULL,
  	`active` BOOLEAN NOT NULL DEFAULT 1,
  	`in_use` BOOLEAN NOT NULL DEFAULT 1,
- 	UNIQUE KEY `s1` (`group_id`,`username`),
+ 	UNIQUE KEY `s1` (`username`,`group_id`),
  	KEY `s2` (`group_id`,`in_use`,`changetime`),
  	UNIQUE KEY `s3` (`group_id`,`address`)
  );
