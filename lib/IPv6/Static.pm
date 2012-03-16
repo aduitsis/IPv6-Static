@@ -265,7 +265,7 @@ sub set_in_use_user_quick {
 	my $t1 = time;
 
 	my $sth = $dbh->prepare('UPDATE '.TABLE.' SET in_use=? WHERE username=?') or confess $dbh->errstr;
-	$sth->execute($in_use,$group_id,$username) or confess $sth->errstr;
+	$sth->execute($in_use,$username) or confess $sth->errstr;
 
 	my $dt = time - $t1;
 	update_stat('QUICK update in_use query',$dt);
