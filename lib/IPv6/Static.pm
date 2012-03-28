@@ -388,7 +388,7 @@ sub handle_user_logout {
 	
 }
 
-=item B<handle_user_logout_quick ($dbh,$group_name,$username)>
+=item B<handle_user_logout_quick ($dbh,$username)>
 
 The _quick version just nukes the in_use field to 0 blindly. B<It also assumes 
 that each username is unique, regardless of group.>
@@ -400,7 +400,6 @@ in your problem domain regardless of group.
 
 sub handle_user_logout_quick {
 	defined( my $dbh = shift ) or confess 'incorrect call';
-	defined( my $group_name = shift ) or confess 'incorrect call';
 	defined( my $username = shift ) or confess 'incorrect call';
 
 	# setup a logger
@@ -408,11 +407,12 @@ sub handle_user_logout_quick {
 
 	my $t1 = time;
 	
+	$logger->info("logout $username"); 
 	set_in_use_user_quick($dbh,$username,0);
 	my $dt = time - $t1;
 	update_stat('QUICK user logout path',$dt);	
 
-	return;	
+	return { logger => $logger } ;	
 }
 
 sub handle_user_login {
@@ -451,14 +451,14 @@ sub handle_user_login {
 
 		if(IN_USE_SET) { #update in_use all the time
 			refresh_record($dbh, $group_id, $username);
-			$logger->info('refreshed '.record2str($user_record));
+			$logger->debug('refreshed '.record2str($user_record));
 		}
 		elsif( ENABLE_SLACK && ( SLACK < $user_record->{slack} ) ) { #update record, but not too often
 			refresh_record($dbh, $group_id, $username); #update the changetime 
-			$logger->info('refreshed '.record2str($user_record));
+			$logger->debug('refreshed '.record2str($user_record));
 		} 
 		else { 
-			$logger->info('no need to refresh yet: '.record2str($user_record));
+			$logger->debug('no need to refresh yet: '.record2str($user_record));
 		}
 
 		# now the table can be unlocked
@@ -472,7 +472,7 @@ sub handle_user_login {
 	} 
 	else {
 		#at this point we have decided that we don't have an address to give
-		$logger->info("No record found for $username of $group_name");
+		$logger->debug("No record found for $username of $group_name");
 
 		#so, we'll do some changes to the database
 
@@ -481,12 +481,12 @@ sub handle_user_login {
 
 		#if we have reached the limit
 		if( get_group($group_name)->{limit} <= $next_address ) {
-			$logger->info("Limit $next_address for $group_name reached. Reusing an old record");
+			$logger->debug("Limit $next_address for $group_name reached. Reusing an old record");
 			#find the oldest row in the tabe	
 			my $old_record = find_oldest_record($dbh,$group_id);	
 			confess 'ERROR! we should have been able to find at least one record!' unless(defined($old_record));
 
-			$logger->info('record to be updated: ' . record2str($old_record));
+			$logger->debug('record to be updated: ' . record2str($old_record));
 			# MAJOR WARNING: update_record has a (intentional) side-effect, it sets in_use = 1
 			update_record($dbh,$group_id,$old_record->{username},$username);
 
@@ -508,7 +508,7 @@ sub handle_user_login {
 				journal_entry($dbh,$group_id,$username,$old_record->{address},0);
 
 				#create a log entry for the row that was changed
-				log_entry($dbh,$group_id,$username,$old_record->{address},$old_record->{createtime});
+				log_entry($dbh,$group_id,$old_record->{username},$old_record->{address},$old_record->{createtime});
 
 				my $dt = time - $t1;
 				update_stat('update record login path',$dt);
@@ -522,7 +522,7 @@ sub handle_user_login {
 				
 		} 	
 		else { #create a new row
-			$logger->info("next free address is $next_address, will create a record for it");	
+			$logger->debug("next free address is $next_address, will create a record for it");	
 
 			create_new_record($dbh,$group_id,$username,$next_address);
 			# remember, the table has a in_use = 1 default for all new records. 
@@ -531,7 +531,7 @@ sub handle_user_login {
 				unlock_tables($dbh);
 				journal_entry($dbh,$group_id,$username,$user_record->{address},0);
 
-				$logger->info('new record created: '.record2str($user_record));
+				$logger->debug('new record created: '.record2str($user_record));
 
 				my $dt = time - $t1;
 				update_stat('create record login path',$dt);
