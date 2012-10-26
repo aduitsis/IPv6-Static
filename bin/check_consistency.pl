@@ -37,24 +37,28 @@ if( defined( $db_password) && ( $db_password eq '' ) ) {
 	
 defined ( my $dbh = DBI->connect ("DBI:mysql:database=$db_name;host=$db_host", $db_username, $db_password ) ) or do { die DBI::errstr };
 
-my $group_id = IPv6::Static::get_group($group)->{id};
+my $group_ref = IPv6::Static::get_group($dbh,$group);
+my $group_id = $group_ref->{id};
+my $group_limit = $group_ref->{limit};
 
-$max_addr = (defined($max_addr))? $max_addr : IPv6::Static::get_record_count($dbh,$group_id);
+$max_addr = (defined($max_addr))? $max_addr : $group_limit ;
 
 
 for(0..($max_addr-1)) {
 	my $record = IPv6::Static::get_address_record($dbh,$group_id,$_);#careful! this query is not indexed...
-	$DEBUG && print STDERR 'Record '.IPv6::Static::record2str($record)." is OK\n";
 	if( ! defined($record) ) {
-		print "Record with address:\t$_ is missing";
+		print "Missing: Record with address number:\t$_ is missing";
 		if ($fix) {
 			print "...fixing";
 			IPv6::Static::lock_tables($dbh);
 			IPv6::Static::create_new_record($dbh,$group_id,'anonymous coward'.$_,$_);
-			IPv6::Static::set_in_use_user($dbh,$group,'anonymous coward'.$_,0);
+			IPv6::Static::set_in_use_user($dbh,$group_id,'anonymous coward'.$_,0);
 			IPv6::Static::unlock_tables($dbh);
 		}
 		print "\n";
+	}
+	else {
+		$DEBUG && print STDERR 'OK: Record '.IPv6::Static::record2str($record)."\n";
 	}
 }
 

@@ -47,7 +47,7 @@ sub update_stat {
 }
 	
 
-=item B<get_group ($group_name)>
+=item B<get_group ($dbh,$group_name)>
 
 Utility function, takes in a group name, returns a unique number for that group.
 Current implementation based on a constant from IPv6::Static::Settings.
@@ -56,8 +56,13 @@ In the future, implement using a database as necessary
 =cut 
 
 sub get_group {
-	return GROUPS->{$_[0]} if exists(GROUPS->{$_[0]});
-	confess 'invalid group $_[0] requested';
+	defined( my $dbh = shift ) or confess 'incorrect call';
+	defined( my $group_name = shift ) or confess 'incorrect call';
+
+	my $sth = $dbh->prepare('select id,min(sum) as maximum from (select groups.id,groups.name,purpose,sum(length) as sum from groups,pools where group_id=groups.id group by groups.id,purpose) as xxx where name=? group by id;') or confess $dbh->errstr;
+	$sth->execute($group_name) or confess $sth->errstr;
+	defined( my $row = $sth->fetchrow_hashref ) or confess "no such group: $group_name";
+	return { id => $row->{id} , limit => $row->{maximum} };
 }
 
 =item B<get_user_record ($dbh,$group_id,$username)>
@@ -81,6 +86,33 @@ sub get_user_record {
 	return $sth->fetchrow_hashref; 
 }
 
+sub get_user_record_blind {
+	defined( my $dbh = shift ) or confess 'incorrect call';
+	defined( my $username = shift ) or confess 'incorrect call';
+
+	my $t1 = time;
+	my $sth = $dbh->prepare('SELECT *,UNIX_TIMESTAMP()-UNIX_TIMESTAMP(changetime) as slack FROM '.TABLE.' WHERE username=?') or confess $dbh->errstr;
+	$sth->execute($username) or confess $sth->errstr;
+	my $dt = time - $t1;
+	update_stat('get user record query',$dt);
+	update_stat('all queries',$dt);
+	
+	return $sth->fetchrow_hashref; 
+}
+
+sub get_in_use_record {
+	defined( my $dbh = shift ) or confess 'incorrect call';
+	defined( my $username = shift ) or confess 'incorrect call';
+
+	my $t1 = time;
+	my $sth = $dbh->prepare('SELECT * FROM '.TABLE.' WHERE username=? AND in_use=1') or confess $dbh->errstr;
+	$sth->execute($username) or confess $sth->errstr;
+	my $dt = time - $t1;
+	update_stat('get user record query',$dt);
+	update_stat('all queries',$dt);
+	
+	return $sth->fetchrow_hashref; 
+}
 =item B<get_address_record ($dbh,$group_id,$address)>
 
 This sub is used by consistency checks only. 
@@ -183,7 +215,7 @@ sub find_oldest_record {
 
 	my $result = $sth->fetchrow_hashref;
 	if( ! defined($result) ) {
-		confess 'No records at all in the database !'; 
+		return undef;
 	}
 	else {
 		return $result; 
@@ -345,7 +377,7 @@ function at all.
 
 =cut
 
-sub handle_user_logout {
+sub delete_account {
 	defined( my $dbh = shift ) or confess 'incorrect call';
 	defined( my $group_name = shift ) or confess 'incorrect call';
 	defined( my $username = shift ) or confess 'incorrect call';
@@ -355,7 +387,9 @@ sub handle_user_logout {
 
 	my $t1 = time;
 	
-	my $group_id = get_group($group_name)->{id};
+	my $group_ref = get_group($dbh,$group_name);
+	my $group_id = $group_ref->{id};
+	my $group_limit = $group_ref->{limit};
 
 	if(! defined( $group_id ) ) {
 		confess "no group id for $group_name";
@@ -363,9 +397,9 @@ sub handle_user_logout {
 
 	if(IN_USE_SET) { # this is called only if the IS_USE_SET is evaluated to true
 		if( defined( my $user_record = get_user_record($dbh, $group_id, $username) ) ) {
-			$logger->debug('about to logout record: '.record2str($user_record) );
+			$logger->debug('about to mark as inactive this record: '.record2str($user_record) );
 			if( $user_record->{in_use} == 0 ) { 
-				confess 'user already logged out. Log was: '.$logger->to_string;
+				confess 'user already marked as inactive. Log was: '.$logger->to_string;
 			}
 			else {
 				$logger->info('Setting in_use=0 for: '.record2str($user_record) );
@@ -374,7 +408,7 @@ sub handle_user_logout {
 				my $dt = time - $t1;
 				update_stat('user logout path',$dt);
 
-				return { record => $user_record , logger => $logger };
+				return { status => $username.' marked inactive' , record => $user_record , logger => $logger };
 			}
 		}
 		else {
@@ -398,7 +432,7 @@ in your problem domain regardless of group.
 
 =cut
 
-sub handle_user_logout_quick {
+sub delete_account_blind {
 	defined( my $dbh = shift ) or confess 'incorrect call';
 	defined( my $username = shift ) or confess 'incorrect call';
 
@@ -406,16 +440,36 @@ sub handle_user_logout_quick {
 	my $logger = IPv6::Static::Logger->new('DEBUG');
 
 	my $t1 = time;
-	
-	$logger->info("logout $username"); 
-	set_in_use_user_quick($dbh,$username,0);
-	my $dt = time - $t1;
-	update_stat('QUICK user logout path',$dt);	
+	if(IN_USE_SET) { # this is called only if the IS_USE_SET is evaluated to true
+		if( defined( my $user_record = get_user_record_blind($dbh, $username) ) ) {
+			$logger->debug('about to mark as inactive this record: '.record2str($user_record) );
+			if( $user_record->{in_use} == 0 ) { 
+				confess 'user already marked as inactive. Log was: '.$logger->to_string;
+			}
+			else {
+				$logger->info('Setting in_use=0 for: '.record2str($user_record) );
+				set_in_use_user($dbh,$user_record->{group_id},$username,0);
 
-	return { logger => $logger } ;	
+				my $dt = time - $t1;
+				update_stat('user logout path',$dt);
+
+				return { status => $username.' marked inactive' , record => $user_record , logger => $logger };
+			}
+		}
+		else {
+			confess "User $username does not exist in our records";
+		}
+	}
+	else {
+		confess 'handle_user_logout is not really needed since IN_USE_SET evaluates to false';
+	}
+	confess 'I should not had made it here';
+	
+	#set_in_use_user_quick($dbh,$username,0);
+
 }
 
-sub handle_user_login {
+sub create_account {
 	defined( my $dbh = shift ) or confess 'incorrect call';
 	defined( my $group_name = shift ) or confess 'incorrect call';
 	defined( my $username = shift ) or confess 'incorrect call';
@@ -424,41 +478,23 @@ sub handle_user_login {
 	my $logger = IPv6::Static::Logger->new('DEBUG');
 
 	my $t1 = time;
-	
-	my $group_id = get_group($group_name)->{id};
+
+	my $group_ref= get_group($dbh,$group_name);
+	my $group_id = $group_ref->{id};
+	my $group_limit = $group_ref->{limit};
 
 	if(! defined( $group_id ) ) {
 		confess "no group id for $group_name";
 	}
-
+	
 	#first of all, we lock completely so that nodody else reads or writes while we work
 	lock_tables($dbh);
 
 	if( defined( my $user_record = get_user_record($dbh, $group_id, $username) ) ) {
 
-		#check for double logins
-		if(IN_USE_WHERE) { #only needed if we check the value of in_use 
-			if( $user_record->{in_use} == 1 ) { 
-				if( DOUBLE_LOGIN_CHECK_LEVEL == 2 ) {
-					confess 'Double login: '.record2str($user_record).' log was: '.$logger->to_string;
-				}
-				elsif( DOUBLE_LOGIN_CHECK_LEVEL == 1 ) {
-					$logger->warn('Double login (but I will continue): '.record2str($user_record));
-				} 
-					
-			} 
-		}
-
 		if(IN_USE_SET) { #update in_use all the time
 			refresh_record($dbh, $group_id, $username);
-			$logger->debug('refreshed '.record2str($user_record));
-		}
-		elsif( ENABLE_SLACK && ( SLACK < $user_record->{slack} ) ) { #update record, but not too often
-			refresh_record($dbh, $group_id, $username); #update the changetime 
-			$logger->debug('refreshed '.record2str($user_record));
-		} 
-		else { 
-			$logger->debug('no need to refresh yet: '.record2str($user_record));
+			$logger->debug('refreshed record '.record2str($user_record));
 		}
 
 		# now the table can be unlocked
@@ -467,7 +503,7 @@ sub handle_user_login {
 		my $dt = time - $t1;
 		update_stat('get existing record login path',$dt);
 
-		return { record => $user_record , logger => $logger } ;
+		return { status=>'record already exists' , record => $user_record , logger => $logger } ;
 
 	} 
 	else {
@@ -480,11 +516,14 @@ sub handle_user_login {
 		my $next_address = get_record_count($dbh,$group_id);
 
 		#if we have reached the limit
-		if( get_group($group_name)->{limit} <= $next_address ) {
+		if( $group_limit <= $next_address ) {
 			$logger->debug("Limit $next_address for $group_name reached. Reusing an old record");
 			#find the oldest row in the tabe	
 			my $old_record = find_oldest_record($dbh,$group_id);	
-			confess 'ERROR! we should have been able to find at least one record!' unless(defined($old_record));
+			if( ! defined($old_record) )  { 	
+				unlock_tables($dbh); 
+				confess 'ERROR! cannot find at least one record that can be replaced!' 
+			}
 
 			$logger->debug('record to be updated: ' . record2str($old_record));
 			# MAJOR WARNING: update_record has a (intentional) side-effect, it sets in_use = 1
@@ -498,6 +537,7 @@ sub handle_user_login {
 
 				#make sure that we updated the correct record!
 				if ( $old_record->{address} != $new_record->{address} ) {
+					unlock_tables($dbh);
 					confess 'ERROR! old record:'.record2str($old_record).' and new record:'.record2str($new_record).' should have the same address. Log was: '.$logger->to_string;
 				}
 				$logger->info('replace successful, new record is '.record2str($new_record));
@@ -513,7 +553,7 @@ sub handle_user_login {
 				my $dt = time - $t1;
 				update_stat('update record login path',$dt);
 
-				return { record => $new_record , logger => $logger };
+				return { status=>'replaced record '.$old_record->{username} , record => $new_record , logger => $logger };
 			}
 			else {
 				unlock_tables($dbh);
@@ -536,7 +576,7 @@ sub handle_user_login {
 				my $dt = time - $t1;
 				update_stat('create record login path',$dt);
 
-				return { record => $user_record , logger => $logger } ;
+				return { status=>'new record created' , record => $user_record , logger => $logger } ;
 			}
 			else {
 				unlock_tables($dbh);
