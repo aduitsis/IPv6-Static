@@ -31,6 +31,18 @@ my $db_name='sch_ipv6';
 
 my $DEBUG = 0;
 
+sub calculate_all_prefixes { 
+	my $dbh = shift // die 'incorrect call';
+	my %data = @{ IPv6::Static::map_over_entries( $dbh ,
+		sub {
+			$DEBUG && p $_;
+			return $_->{ username } => Pools::get_prefixes( $dbh , $_->{ username } ) ;
+		},
+	) } ;
+	\%data;
+}
+
+
 sub get_prefixes { 
 	my $dbh = shift // die 'incorrect call';
 	my $username = shift // die 'incorrect call';

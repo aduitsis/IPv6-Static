@@ -19,7 +19,7 @@ use Term::ReadLine;
 
 use FindBin qw( $Bin ) ;
 
-use lib $Bin.'/../IPv6-Static/lib';
+use lib $Bin.'/../lib';
 use IPv6::Static;
 
 use Heuristics;
@@ -70,7 +70,7 @@ if( defined( $db_password) && ( $db_password eq '' ) ) {
 	print "\n";
 }
         
-defined ( my $dbh = DBI->connect ("DBI:mysql:database=$db_name;host=$db_host", $db_username, $db_password ) ) or do { die DBI::errstr };
+defined ( my $dbh = DBI->connect ("DBI:mysql:database=$db_name;host=$db_host", $db_username, $db_password , {mysql_enable_utf8 => 1} ) ) or do { die DBI::errstr };
 
 for my $unit ( keys %{$units} ) {
 	

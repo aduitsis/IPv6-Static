@@ -5,6 +5,7 @@ use strict;
 use DBI;
 use Carp;
 use Time::HiRes qw(time);
+use Data::Printer;
 
 use IPv6::Static::Settings qw(GROUPS TABLE LOG_TABLE JOURNAL_TABLE IN_USE_WHERE IN_USE_SET W SLACK ENABLE_SLACK WARRANTY DOUBLE_LOGIN_CHECK_LEVEL);
  
@@ -376,6 +377,20 @@ the is_use field is actually used. Otherwise, it is not required to call this
 function at all. 
 
 =cut
+
+sub get_all_usernames {
+	defined( my $dbh = shift ) or confess 'incorrect call';
+	map_over_entries( $dbh , sub { $_->{username} } );
+}
+
+sub map_over_entries {
+	defined( my $dbh = shift ) or confess 'incorrect call';
+	defined( my $f = shift ) or confess 'incorrect call';
+	confess 'expected a sub' unless ( ref( $f ) eq 'CODE' ) ;
+	my $sth = $dbh->prepare('SELECT * from '.TABLE.'  WHERE in_use=1 ORDER BY address') or confess $dbh->errstr;
+	$sth->execute or confess $sth->errstr;
+	return [ map { $f->() } @{ $sth->fetchall_arrayref({}) } ] ;
+}
 
 sub delete_account {
 	defined( my $dbh = shift ) or confess 'incorrect call';

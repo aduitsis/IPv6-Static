@@ -20,12 +20,10 @@ use Term::ReadLine;
 use FindBin qw( $Bin ) ;
 
 use lib $Bin.'/../lib';
-use lib $Bin.'/../../ip6prefix/lib';
 use IPv6::Static;
-use IPv6::Address;
-use Pools;
 
 use Heuristics;
+use Pools;
 
 binmode STDOUT, ":encoding(utf8)";
 binmode STDERR, ":encoding(utf8)";
@@ -37,8 +35,7 @@ my $db_name='sch_ipv6';
 
 my $DEBUG = 0;
 
-GetOptions('d' => \$DEBUG , 'host|h=s' => \$db_host , 'user|u=s' => \$db_username, 'password|p:s' => \$db_password , 'db=s' => \$db_name);
-
+GetOptions('d' => \$DEBUG , 'host|h=s' => \$db_host , 'user|u=s' => \$db_username, 'password|p:s' => \$db_password , 'db=s' => \$db_name );
 
 if( defined( $db_password) && ( $db_password eq '' ) ) {
         ReadMode 2;
@@ -46,14 +43,12 @@ if( defined( $db_password) && ( $db_password eq '' ) ) {
         my $prompt = 'password:';
         $db_password = $term->readline($prompt);
         ReadMode 0;
-	print "\n";
 }
-
-my $username = shift // die 'missing username';
         
-defined ( my $dbh = DBI->connect ("DBI:mysql:database=$db_name;host=$db_host", $db_username, $db_password ) ) or do { die DBI::errstr };
+defined ( my $dbh = DBI->connect ("DBI:mysql:database=$db_name;host=$db_host", $db_username, $db_password, {mysql_enable_utf8 => 1} ) ) or do { die DBI::errstr };
 
-my $r =  Pools::get_prefixes( $dbh , $username ) ;
-say $r->{framed};
-say $r->{delegated};
+my $prefixes = Pools::calculate_all_prefixes( $dbh ) ;
 
+for (keys %{$prefixes}) {
+	say join("\t",$_,$prefixes->{$_}->{ framed } , $prefixes->{$_}->{ delegated } ) ;
+}
