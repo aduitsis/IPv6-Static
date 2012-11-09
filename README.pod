@@ -1,4 +1,6 @@
-=head1 IPv6 Purser - IPv6 Address Assignment System for the Greek School Network 
+=head1 IPv6 Purser 
+
+=head2 IPv6 Address Assignment System for the Greek School Network 
 
 The IPv6 Purser is a simple persistent IPv6 Prefix assignment and
 administration tool to help handle IPv6 address assignments for
@@ -47,25 +49,25 @@ Use these declarations for the tables that this module uses:
   KEY `s2` (`starttime`,`stoptime`)
  )
 
-=head1 LICENSE
+=head2 LICENSE
 
 At this point, not yet decided. To be continued. In the meantime, use
 the module only for noble purposes.  
 
-=head1 BUGS
+=head2 BUGS
 
 Surely there are more than a few. To report, open an issue at github,
 make a pull request, mail the author, do whatever strikes your fancy.
 Anything is acceptable.  
 
-=head1 DISCLAIMER
+=head2 DISCLAIMER
 
 This module may cause whatever you plug it into to go critical. The
 author is not  responsible for whatever bad happens as a result.
 
 However, I get all the good karma if you actually find it useful! 
 
-=head1 AUTHOR 
+=head2 AUTHOR 
 
 Athanasios Douitsis L<mailto:aduitsis@cpan.org>
 
