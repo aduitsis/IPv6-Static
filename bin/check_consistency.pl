@@ -11,31 +11,23 @@ use List::Util qw(sum);
 use Getopt::Long;
 use Term::ReadKey;
 use Term::ReadLine;
+use Pod::Usage;
+use DBHelper;
 
 my $fix = 0;
 my $group = '';
 my $max_addr;
 
-my $db_host = 'localhost';
-my $db_username;
-my $db_password;
-my $db_name='test';
-
 my $DEBUG = 0;
 
-GetOptions('d' => \$DEBUG , 'fix'=>\$fix,'group=s'=>\$group,'max=i'=>\$max_addr,'host|h=s' => \$db_host , 'user|u=s' => \$db_username, 'password|p:s' => \$db_password , 'db=s' => \$db_name);
+my $help;
 
+db_getoptions('help|?' => \$help, 'd' => \$DEBUG , 'fix'=>\$fix,'group=s'=>\$group,'max=i'=>\$max_addr,);
 
-if( defined( $db_password) && ( $db_password eq '' ) ) {
-	ReadMode 2;
-	my $term = Term::ReadLine->new('password prompt');
-	my $prompt = 'password:';
-	$db_password = $term->readline($prompt);
-	ReadMode 0;
-}
+pod2usage(1) if $help;
 
-	
-defined ( my $dbh = DBI->connect ("DBI:mysql:database=$db_name;host=$db_host", $db_username, $db_password ) ) or do { die DBI::errstr };
+my $dbh = db_connect; 
+
 
 my $group_ref = IPv6::Static::get_group($dbh,$group);
 my $group_id = $group_ref->{id};
@@ -51,8 +43,8 @@ for(0..($max_addr-1)) {
 		if ($fix) {
 			print "...fixing";
 			IPv6::Static::lock_tables($dbh);
-			IPv6::Static::create_new_record($dbh,$group_id,'anonymous coward'.$_,$_);
-			IPv6::Static::set_in_use_user($dbh,$group_id,'anonymous coward'.$_,0);
+			IPv6::Static::create_new_record($dbh,$group_id,'anonymous person'.$_,$_);
+			IPv6::Static::set_in_use_user($dbh,$group_id,'anonymous person'.$_,0);
 			IPv6::Static::unlock_tables($dbh);
 		}
 		print "\n";
@@ -69,4 +61,64 @@ while( my $record = $sth->fetchrow_hashref ) {
 }
 
 
+__END__
 
+=head1 NAME
+
+check_consistency.pl -- check ipv6 prefix database consistency
+
+=head1 SYNOPSIS
+
+ check_consistency.pl [ options ]
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<-help>
+
+Print a brief help message and exits.
+
+=item B<-d>
+
+Enable more verbose output
+
+=item B<-fix>
+
+Actually fix whatever errors are encountered. Without this option,
+the program will not make no changes whatsoever to the database.
+
+=item B<-group>
+
+Check items belonging to this specific group. Omitting this option 
+will select a default '' group. So it is probably pointless to run this
+program without supplying the group. 
+
+=item B<-max>
+
+Check all items up to this numeric index. Omitting this option will
+cause the program to calculate and use the default group maximum index.
+
+=item B<-host|-h> 
+
+Connect to mysql on this hostname.
+
+=item B<-user|-u>
+
+Use this mysql username when connecting.
+
+=item B<-p|-password>
+
+Use this mysql password when connecting.
+
+=item B<-db> 
+
+Use this database when connecting.
+
+=back
+
+=head1 DESCRIPTION
+
+Checks consistency of a static address database. 
+
+=cut

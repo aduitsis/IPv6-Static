@@ -15,6 +15,7 @@ use Data::Dump qw(pp);
 use Getopt::Long;
 use Storable qw(nstore retrieve);
 
+use lib $Bin.'/../lib/';
 use Heuristics;
 
 binmode STDOUT, ":encoding(utf8)";
