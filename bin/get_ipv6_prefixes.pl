@@ -16,6 +16,7 @@ use Getopt::Long;
 use Storable qw(nstore retrieve);
 use Term::ReadKey;
 use Term::ReadLine;
+use Pod::Usage;
 
 use FindBin qw( $Bin ) ;
 
@@ -27,33 +28,76 @@ use Pools;
 
 use Heuristics;
 
+use DBHelper;
+
 binmode STDOUT, ":encoding(utf8)";
 binmode STDERR, ":encoding(utf8)";
 
-my $db_host = 'localhost';
-my $db_username;
-my $db_password;
-my $db_name='sch_ipv6';
-
 my $DEBUG = 0;
 
-GetOptions('d' => \$DEBUG , 'host|h=s' => \$db_host , 'user|u=s' => \$db_username, 'password|p:s' => \$db_password , 'db=s' => \$db_name);
+my $help;
 
+db_getoptions('help|?'=> \$help, 'd' => \$DEBUG);
 
-if( defined( $db_password) && ( $db_password eq '' ) ) {
-        ReadMode 2;
-        my $term = Term::ReadLine->new('password prompt');
-        my $prompt = 'password:';
-        $db_password = $term->readline($prompt);
-        ReadMode 0;
-	print "\n";
-}
+pod2usage(-verbose => 2) if $help;
 
 my $username = shift // die 'missing username';
         
-defined ( my $dbh = DBI->connect ("DBI:mysql:database=$db_name;host=$db_host", $db_username, $db_password ) ) or do { die DBI::errstr };
+my $dbh = db_connect;
 
 my $r =  Pools::get_prefixes( $dbh , $username ) ;
+
 say $r->{framed};
 say $r->{delegated};
+
+
+__END__
+
+=head1 NAME
+
+get_ipv6_prefixes -- get the assigned IPv6 prefixes for a specific username
+
+=head1 SYNOPSIS
+
+ get_ipv6_prefixes.pl [ options ] user_identifier
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<-help>
+
+Print a brief help message and exit.
+
+=item B<-d>
+
+Enable more verbose output
+
+=item B<-host|-h> 
+
+Connect to mysql on this hostname.
+
+=item B<-user|-u>
+
+Use this mysql username when connecting.
+
+=item B<-p|-password>
+
+Use this mysql password when connecting.
+
+=item B<-db> 
+
+Use this database when connecting.
+
+=back
+
+=head1 DESCRIPTION 
+
+The purpose of this program is to return the assigned IPv6 prefixes for
+a specific user identifier which is supplied as the argument. If the
+user identifier does not exist, the program will emit an error message
+and exit. Otherwise, one would expect a couple of prefixes to be
+printed, one line each.
+
+=cut
 

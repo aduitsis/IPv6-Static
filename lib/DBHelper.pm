@@ -1,5 +1,7 @@
 package DBHelper;
 
+use v5.14;
+
 use warnings;
 use strict;
 use Carp;
@@ -20,7 +22,7 @@ our @EXPORT = qw( &db_getoptions &db_connect );
 my $db_host = 'localhost';
 my $db_username;
 my $db_password;
-my $db_name='test';
+my $db_name='sch_ipv6';
 my $dbh;
 
 my %getopt_db_args = ( 
@@ -41,8 +43,10 @@ sub db_connect {
 		my $prompt = 'password:';
 		$db_password = $term->readline($prompt);
 		ReadMode 0;
+		say '';
+		say STDERR '';
 	}
-	defined ( my $dbh = DBI->connect ("DBI:mysql:database=$db_name;host=$db_host", $db_username, $db_password ) ) or do { die DBI::errstr };
+	defined ( my $dbh = DBI->connect ("DBI:mysql:database=$db_name;host=$db_host", $db_username, $db_password, {mysql_enable_utf8 => 1} ) ) or do { die DBI::errstr };
 	return $dbh;
 }
 
