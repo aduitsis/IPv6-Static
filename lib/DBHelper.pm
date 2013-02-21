@@ -14,6 +14,7 @@ use Getopt::Long;
 use Term::ReadKey;
 use Term::ReadLine;
 use Pod::Usage;
+use autodie qw(open close);
 
 use parent qw(Exporter);
 
@@ -24,6 +25,18 @@ my $db_username;
 my $db_password;
 my $db_name='sch_ipv6';
 my $dbh;
+
+my $settings_file = $Bin.'/../etc/settings.rc' ; 
+if( -f $settings_file ) {
+	open( my $cfg_file , '<' , $settings_file );
+	my $slurp = do { local $/ ; <$cfg_file> };
+	close $cfg_file;
+	eval $slurp;
+	die $@ if($@);
+}
+else {
+	say STDERR 'settings file missing'
+}
 
 my %getopt_db_args = ( 
 	'host|h=s' => \$db_host, 
@@ -37,7 +50,7 @@ sub db_getoptions {
 }
 
 sub db_connect { 
-	if( defined( $db_password) && ( $db_password eq '' ) ) {
+	if( defined( $db_password ) && ( $db_password eq '' ) ) {
 		ReadMode 2;
 		my $term = Term::ReadLine->new('password prompt');
 		my $prompt = 'password:';
