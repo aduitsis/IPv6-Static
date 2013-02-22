@@ -24,6 +24,8 @@ use DBHelper;
 use Heuristics;
 use Pools;
 
+use LDAPHelper;
+
 binmode STDOUT, ":encoding(utf8)";
 binmode STDERR, ":encoding(utf8)";
 
@@ -41,21 +43,58 @@ db_getoptions('d' => \$DEBUG , 'write' => \$write );
 
 my $dbh = db_connect;
 
+my $file = shift // die 'Missing input storable filename';
 
-IPv6::Static::map_over_entries( $dbh, sub {
-	p $_; #FUUUUUUU this will not work if it's the last statement
-	1;
-} ) ;
+my $data = retrieve $file;
 
-#my $sth = $dbh->prepare('select * from ipv6_static where group_id=(select id from groups where name=?)') or confess $dbh->errstr;
-#$sth->execute( $group_name ) or confess $sth->errstr;
-#
-#while( my $row = $sth->fetchrow_hashref ) {
-#	#p $row;
-#	my $r =  Pools::get_prefixes( $dbh , $row->{username} ) ;
-#	say join("\t",($row->{username},$r->{framed},$r->{delegated}));
-#	if( $write ) {
-#		my $sth2 = $dbh->prepare('replace into ipv6_units set dn=?,framed=?,delegated=?') or do { die DBI::errstr };
-#		$sth2->execute( $row->{username} , $r->{framed} , $r->{delegated} );
-#	}
-#}
+#p $data;
+
+my %modifications;
+
+my $ldap;
+if( $write ) {
+	$ldap = LDAPHelper->new;
+}
+
+for my $unit ( keys %{$data} ) {
+	say STDERR $unit;
+	if( Pools::exists_entry( $dbh, $unit ) ) {
+		my $r =  Pools::get_prefixes( $dbh , $unit ) ;		
+		for my $account ( @{ $data->{$unit}->{accounts} } ) {
+			my $account_id = $account->{account} ; 
+			say STDERR "\t".$account_id.' '.$r->{framed}.' '.$r->{delegated};
+			$modifications{ $account_id } = { radiusFramedIPv6Prefix => $r->{framed}->to_string , radiusDelegatedIPv6Prefix => $r->{delegated}->to_string };
+			if( $write ) {
+				my @entries = ( $ldap->search( $account_id , 'base', ['uid','radiusFramedIPv6Prefix','radiusDelegatedIPv6Prefix'], 'objectclass=*'  ) );
+				for my $entry ( @entries ) {
+					#p $entry;
+					$ldap->modify( $entry , %{ $modifications{ $account_id } } ) ;	
+				}
+				die 'empty entries for '.$account_id unless @entries;
+			}		
+		}
+	}
+	else {
+		say STDERR 'User record does NOT exist for '.$unit;
+		say STDERR 'Please run mass_create_accounts so that all units will hava a valid record';
+	}
+}
+
+
+###if( $write ) {
+###	my $ldap = LDAPHelper->new;
+###	for my $account ( keys %modifications ) {
+###		my @entries = ( $ldap->search( $account , 'base', ['uid','radiusFramedIPv6Prefix','radiusDelegatedIPv6Prefix'], 'objectclass=*'  ) );
+###		for my $entry ( @entries ) { 
+###			p $entry;
+###			$ldap->modify( $entry , %{ $modifications{ $account } } ) ; 
+###		}
+###		die 'empty entries' unless @entries;
+###	}
+###}
+
+#IPv6::Static::map_over_entries( $dbh, sub {
+#	p $_; #FUUUUUUU this will not work if it's the last statement
+#	1;
+#} ) ;
+

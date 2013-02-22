@@ -43,6 +43,15 @@ sub calculate_all_prefixes {
 }
 
 
+sub exists_entry {
+	my $dbh = shift // die 'incorrect call';
+	my $username = shift // die 'incorrect call';
+	
+	IPv6::Static::get_in_use_record( $dbh , $username ) // return;
+
+	return 1;
+}		
+	
 sub get_prefixes { 
 	my $dbh = shift // die 'incorrect call';
 	my $username = shift // die 'incorrect call';

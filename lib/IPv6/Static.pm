@@ -507,6 +507,10 @@ sub create_account {
 
 	if( defined( my $user_record = get_user_record($dbh, $group_id, $username) ) ) {
 
+		my $was_deactivated;
+		$was_deactivated = 1 if( ! $user_record->{ in_use } );
+		
+
 		if(IN_USE_SET) { #update in_use all the time
 			refresh_record($dbh, $group_id, $username);
 			$logger->debug('refreshed record '.record2str($user_record));
@@ -518,7 +522,7 @@ sub create_account {
 		my $dt = time - $t1;
 		update_stat('get existing record login path',$dt);
 
-		return { status=>'record already exists' , record => $user_record , logger => $logger } ;
+		return { status=> ($was_deactivated)? 'record reactivated' : 'record already exists' , record => $user_record , logger => $logger } ;
 
 	} 
 	else {
