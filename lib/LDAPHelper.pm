@@ -18,6 +18,13 @@ my $ldap_uri;
 my $ldap_bind_dn;
 my $ldap_bind_passwd;
 my $ldap_search_base;
+my $ldap_units_base;
+my $ldap_units_filter;
+my @ldap_units_attributes;
+my $ldap_accounts_base;
+my $ldap_accounts_filter;
+my @ldap_accounts_attributes;
+
 my $output = $Bin.'/../tmp.tmp';
 
 my $settings_file = $Bin.'/../etc/ldap_settings.rc' ;
@@ -60,7 +67,7 @@ sub search {
 	); 
 	$mesg->code && die $mesg->error;
 	
-	#careful, this will return 0,1 or many Net::LDAP::Entry items, return forces list context
+	#careful, this will return 0,1 or many Net::LDAP::Entry items, always use list context
 	return $mesg->entries ; 
 
 	
@@ -70,7 +77,7 @@ sub search {
 sub modify { 
 	my $self = shift(@_) // die 'incorrect call';
 	my $dn = shift(@_) // die 'incorrect call';
-	my $mesg = $self->{ldap}->modify( $dn , add => { @_ } );
+	my $mesg = $self->{ldap}->modify( $dn , @_ );
 	$mesg->code && die $mesg->error;
 }
 
@@ -79,5 +86,66 @@ sub DESTROY {
 	$mesg->code && die $mesg->error;
 }
 
+sub get_units_entries { 
+	$_[0]->search( $ldap_units_base , 'sub' , \@ldap_units_attributes, $ldap_units_filter ) ;
+}
+
+sub get_accounts_entries {
+	$_[0]->search( $ldap_accounts_base, 'sub', \@ldap_accounts_attributes, $ldap_accounts_filter );
+}
+
+sub entries_to_data {
+	my $data;
+	for my $entry (@_) {
+		my $ret;
+		for my $attr ($entry->attributes) {
+			push @{ $ret->{lc($attr)} }, $entry->get_value($attr) ;
+		}
+		$data->{ $entry->dn }->{ attributes }  = $ret;
+		$data->{ $entry->dn }->{ ldap_entry } = $entry;
+	}
+	return $data;	
+}
+
+sub get_units {
+	entries_to_data( $_[0]->get_units_entries );
+}
+sub get_accounts {
+	entries_to_data( $_[0]->get_accounts_entries );
+}
+
+sub get_combination {
+	my $self = shift( @_ ) // die 'incorrect call';
+
+	my $units = $self->get_units;
+	my $accounts = $self->get_accounts;
+
+	my %locality;
+
+	for my $account ( keys %{$accounts} ) {
+		for my $locality ( @{ $accounts->{$account}->{ attributes }->{l} } ) {
+			push @{ $locality{ $locality } } , 
+				{ 
+				account => $account , 
+				uid => $accounts->{$account}->{attributes}->{uid}->[0], 
+				ldap_object => $accounts->{$account}->{ ldap_entry } , 
+				attributes => $accounts->{$account}->{ attributes },
+			 	} 
+			; 
+		}
+	}
+
+	for my $unit ( keys %{$units} ) {
+		if( exists( $locality{ $unit } ) ) {
+			$units->{$unit}->{ accounts } = $locality{ $unit } ; 
+		}
+		else {
+			print STDERR "Warning: unit $unit does not have a corresponding account \n";
+			$units->{$unit}->{ accounts } = [];
+		}
+	}
+
+	return $units;
+}
 
 1;

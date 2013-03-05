@@ -14,11 +14,13 @@ use Getopt::Long;
 use YAML qw(Dump);
 use FindBin qw($Bin);
 
+binmode STDOUT, ":encoding(utf8)";
+binmode STDERR, ":encoding(utf8)";
+
 my $ldap_uri;
 my $ldap_bind_dn;
 my $ldap_bind_passwd;
 my $ldap_search_base;
-my $output = $Bin.'/../tmp.tmp';
 
 my $settings_file = $Bin.'/../etc/ldap_settings.rc' ;
 if( -f $settings_file ) {
@@ -37,7 +39,6 @@ GetOptions(
         'D=s' => \$ldap_bind_dn,
         'W=s' => \$ldap_bind_passwd,
         'b=s' => \$ldap_search_base,
-        'output=s' => \$output,
 );
 
 my $filter = shift // '(umdobject=schunit)';

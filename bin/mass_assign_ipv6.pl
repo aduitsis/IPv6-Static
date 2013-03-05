@@ -67,8 +67,9 @@ for my $unit ( keys %{$data} ) {
 			if( $write ) {
 				my @entries = ( $ldap->search( $account_id , 'base', ['uid','radiusFramedIPv6Prefix','radiusDelegatedIPv6Prefix'], 'objectclass=*'  ) );
 				for my $entry ( @entries ) {
-					#p $entry;
-					$ldap->modify( $entry , %{ $modifications{ $account_id } } ) ;	
+					$DEBUG && p $entry;
+					$DEBUG && p $modifications{ $account_id } ; 
+					$ldap->modify( $entry , replace => $modifications{ $account_id } ) ;	
 				}
 				die 'empty entries for '.$account_id unless @entries;
 			}		
@@ -76,7 +77,7 @@ for my $unit ( keys %{$data} ) {
 	}
 	else {
 		say STDERR 'User record does NOT exist for '.$unit;
-		say STDERR 'Please run mass_create_accounts so that all units will hava a valid record';
+		say STDERR 'Please run mass_create_accounts so that all units will have a valid record';
 	}
 }
 
