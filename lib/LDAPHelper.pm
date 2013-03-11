@@ -8,6 +8,7 @@ use v5.14;
 use warnings;
 use strict;
 use Net::LDAP;
+use Net::LDAP::Entry; #why do I do that you ask, right? 
 use Data::Printer;
 use Data::Dump qw(pp);
 use Getopt::Long;
@@ -97,14 +98,19 @@ sub get_accounts_entries {
 sub entries_to_data {
 	my $data;
 	for my $entry (@_) {
-		my $ret;
-		for my $attr ($entry->attributes) {
-			push @{ $ret->{lc($attr)} }, $entry->get_value($attr) ;
-		}
-		$data->{ $entry->dn }->{ attributes }  = $ret;
+		$data->{ $entry->dn }->{ attributes }  = entry_to_data( $entry );
 		$data->{ $entry->dn }->{ ldap_entry } = $entry;
 	}
 	return $data;	
+}
+
+sub entry_to_data {
+	my $entry = shift( @_ ) // die 'missing entry';
+	my $ret;
+	for my $attr ($entry->attributes) {
+		push @{ $ret->{lc($attr)} }, $entry->get_value($attr) ;
+	}
+	return $ret;
 }
 
 sub get_units {
@@ -147,5 +153,32 @@ sub get_combination {
 
 	return $units;
 }
+
+sub write_attributes {
+	my $self = shift( @_ ) // die 'incorrect call';
+	my $entry = shift( @_ ) // die 'missing entry';
+
+	my %attributes = ( @_ );
+
+	my $modifications = {};
+
+	for my $attribute ( keys %attributes ) {
+		if( grep { ( $_ eq $attribute ) && grep { $attributes{ $attribute } eq $_ } ( $entry->get_value( $attribute ) ) } ( $entry->attributes) ) {
+			#say STDERR "\t$attribute already set";
+		}
+		else {
+			#say STDERR "\tsetting $attribute = ".$attributes{ $attribute };
+			$modifications->{ $attribute } = $attributes{ $attribute } ;
+		}		
+	}
+	if( %{ $modifications } ) {  #if the hash is emtpy, evaluates false in boolean context
+		$self->modify( $entry , replace => $modifications );
+		return $modifications
+	}
+	else {
+		return
+	}
+}
+
 
 1;

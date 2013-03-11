@@ -1,0 +1,18 @@
+#!/bin/sh -
+
+DIRNAME=`dirname $0`
+BASENAME=`basename $0`
+
+#$DIRNAME/ldap.pl -h 'ldap://dsw.att.sch.gr:389' -D 'uid=searchuser,dc=sch,dc=gr' -W searchpass -b 'ou=units,dc=sch,dc=gr' -output $DIRNAME/../var/units.yml '(umdobject=schunit)' businesscategory title gsnUnitCode description
+#$DIRNAME/ldap.pl -h 'ldap://dsw.att.sch.gr:389' -D 'uid=searchuser,dc=sch,dc=gr' -W searchpass -b 'dc=sch,dc=gr' -output $DIRNAME/../var/accounts.yml '(|(umdobject=router)(umdobject=account))' uid l 
+$DIRNAME/ldap_search.pl -b 'ou=units,dc=sch2,dc=gr' '(umdobject=schunit)' businesscategory title gsnUnitCode description > $DIRNAME/../var/2units.yml 
+$DIRNAME/ldap_search.pl -b 'dc=sch2,dc=gr' '(|(umdobject=router)(umdobject=account))' uid l radiusFramedIPv6Prefix radiusDelegatedIPv6Prefix > $DIRNAME/../var/2accounts.yml 
+
+
+$DIRNAME/yml2storable.pl $DIRNAME/../var/accounts.yml $DIRNAME/../var/accounts.storable
+$DIRNAME/yml2storable.pl $DIRNAME/../var/units.yml $DIRNAME/../var/units.storable
+
+$DIRNAME/combine.pl $DIRNAME/../var/units.storable $DIRNAME/../var/accounts.storable $DIRNAME/../var/combined.storable
+
+
+$DIRNAME/weed.pl $DIRNAME/../var/combined.storable > $DIRNAME/../var/results.tsv

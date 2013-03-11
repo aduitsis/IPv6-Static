@@ -26,6 +26,8 @@ my $db_password;
 my $db_name='sch_ipv6';
 my $dbh;
 
+my $cat_map;
+
 my $settings_file = $Bin.'/../etc/settings.rc' ; 
 if( -f $settings_file ) {
 	open( my $cfg_file , '<' , $settings_file );
@@ -61,6 +63,11 @@ sub db_connect {
 	}
 	defined ( my $dbh = DBI->connect ("DBI:mysql:database=$db_name;host=$db_host", $db_username, $db_password, {mysql_enable_utf8 => 1} ) ) or do { die DBI::errstr };
 	return $dbh;
+}
+
+sub categorize {
+	exists( $cat_map->{ $_[0] } ) || die "no category defined for $_[0]";
+	$cat_map->{ $_[0] }
 }
 
 1;
