@@ -24,19 +24,46 @@ use lib $Bin.'/../../ip6prefix/lib';
 use IPv6::Static;
 use IPv6::Address;
 
-my $db_host = 'localhost';
-my $db_username;
-my $db_password;
-my $db_name='sch_ipv6';
-
 my $DEBUG = 0;
 
+sub new {
+	my $class = shift // die 'incorrect call';
+	my $dbh = shift // die 'missing database handle';
+	my $self = bless { dbh => $dbh },$class;
+	$self->{ pools } = $self->get_pools;
+	return $self;
+}
+
+sub pool {
+	my $self = shift // die 'incorrect call';
+	my $pool = shift // die 'pool id missing';
+	my $purpose = shift // die 'pool id missing';
+	if( ! exists( $self->{ pools }->{$pool} ) ) {
+		die "pool $pool purpose $purpose does not exist"
+	}
+	$self->{ pools }->{$pool}->{$purpose};
+}
+
+sub prefixes {
+	my $self = shift // die 'incorrect call';
+	my $pool = shift // die 'pool id missing';
+	my $purpose = shift // die 'pool id missing';
+	if( ! exists($self->pool( $pool , $purpose )->{ prefixes }) ) {
+		die "pool $pool purpose $purpose has no prefixes"
+	}
+	$self->pool( $pool , $purpose )->{ prefixes }
+}
+
+sub dbh {
+	$_[0]->{dbh}
+}
+
 sub calculate_all_prefixes { 
-	my $dbh = shift // die 'incorrect call';
-	my %data = @{ IPv6::Static::map_over_entries( $dbh ,
+	my $self = shift // die 'incorrect call';
+	my %data = @{ IPv6::Static::map_over_entries( $self->dbh ,
 		sub {
 			$DEBUG && p $_;
-			return $_->{ username } => Pools::get_prefixes( $dbh , $_->{ username } ) ;
+			return $_->{ username } => $self->get_prefixes(  $_->{ username } ) ;
 		},
 	) } ;
 	\%data;
@@ -44,37 +71,53 @@ sub calculate_all_prefixes {
 
 
 sub exists_entry {
-	my $dbh = shift // die 'incorrect call';
+	my $self = shift // die 'incorrect call';
 	my $username = shift // die 'incorrect call';
 	
-	IPv6::Static::get_in_use_record( $dbh , $username ) // return;
+	IPv6::Static::get_in_use_record( $self->dbh , $username ) // return;
 
 	return 1;
 }		
 	
 sub get_prefixes { 
-	my $dbh = shift // die 'incorrect call';
+	my $self = shift // die 'incorrect call';
 	my $username = shift // die 'incorrect call';
 
-	my $record = IPv6::Static::get_in_use_record( $dbh , $username ) // die 'this user does not exist';
+	my $record = IPv6::Static::get_in_use_record( $self->dbh , $username ) // die 'this user does not exist';
 
 	return { 
-		framed => calculate_prefix( $dbh, $record->{address}, $record->{group_id}, 'framed' ),
-		delegated => calculate_prefix( $dbh, $record->{address}, $record->{group_id}, 'delegated' ), 
+		framed => $self->calculate_prefix( $record->{address}, $record->{group_id}, 'framed' ),
+		delegated => $self->calculate_prefix( $record->{address}, $record->{group_id}, 'delegated' ), 
 	};
 
 }
 
 sub calculate_prefix {
-	my $dbh = shift // die 'incorrect call';
+	my $self = shift // die 'incorrect call';
 	my $address = shift // die 'incorrect call';
 	my $group_id = shift // die 'incorrect call';
 	my $purpose = shift // die 'incorrect call';
 
-	my $sth = $dbh->prepare('select * from pools where active=1 and group_id=? and purpose=?;') or confess $dbh->errstr;
-	$sth->execute($group_id,$purpose) or confess $sth->errstr;
-
-	return IPv6::Address::increment_multiple_prefixes( $address , map { $_->{first_prefix} => $_->{length} } @{ $sth->fetchall_arrayref({}) } );
+	IPv6::Address::increment_multiple_prefixes( $address , %{ $self->prefixes($group_id,$purpose) } );
 }	
+
+sub get_pools {
+	my $self = shift // die 'incorrect call';
+	
+	my $result;
+	
+	$DEBUG && say STDERR 'querying prefix pools';
+	my $sth = $self->dbh->prepare('select * from pools where active=1') or confess $self->dbh->errstr;
+	$sth->execute or confess $sth->errstr;
+
+	for my $row ( @{ $sth->fetchall_arrayref({}) } ) {
+		$result->{ $row->{ group_id } }->{ $row->{purpose} } = {};
+		my $pointer = $result->{ $row->{ group_id } }->{ $row->{purpose} };
+		$pointer->{ prefixes }->{ $row->{first_prefix} } = $row->{'length'} ; 
+		$pointer->{ size } += $row->{'length'};
+	}
+
+	$result;
+}
 
 1;

@@ -1,4 +1,4 @@
-#!/usr/local/bin/perl -w
+package SparseMapper;
 
 use v5.14;
 use warnings;
@@ -89,4 +89,5 @@ sub map_number {
 	die 'internal error, I should not have managed to get here'
 }
 
-say $_ . '===>' . map_number($_, 40)."\n\n" for(0..39);
+
+1;

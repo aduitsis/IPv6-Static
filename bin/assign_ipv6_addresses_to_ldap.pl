@@ -36,6 +36,8 @@ binmode STDOUT, ":encoding(utf8)";
 binmode STDERR, ":encoding(utf8)";
 
 my $ldap = LDAPHelper->new;
+my $dbh = db_connect;
+my $p = Pools->new( $dbh );
 
 my $units; 
 
@@ -53,7 +55,6 @@ if ( defined( $save_filename ) ) {
 	nstore($units,$save_filename)
 }
 
-my $dbh = db_connect;
 
 my %counter;
 
@@ -76,7 +77,7 @@ for my $unit (keys %{ $units } ) {
 
 	say STDERR "\t$category";
 
-	if( ! Pools::exists_entry( $dbh, $unit ) )  {
+	if( ! $p->exists_entry( $unit ) )  {
 		if( $yes ) {
 			my $ret = eval {
 				IPv6::Static::create_account($dbh,$category,$unit)
@@ -93,7 +94,7 @@ for my $unit (keys %{ $units } ) {
 		say STDERR "\trecord already exists";
 	}
 
-	my $r =  Pools::get_prefixes( $dbh , $unit ) ;
+	my $r =  $p->get_prefixes( $unit ) ;
 	say STDERR "\t".$r->{framed}.' '.$r->{delegated};
 	
 	if( $yes ) {
