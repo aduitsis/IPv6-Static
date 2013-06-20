@@ -152,7 +152,7 @@ Print a brief help message and exit.
 
 Enable debug output
 
-=item B<--delete | -d> 
+=item B<--delete> 
 
 When finished with the directory contents, examine whether there are any
 accounts in the static address database that are not in the directory.

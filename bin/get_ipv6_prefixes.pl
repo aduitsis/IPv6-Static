@@ -44,8 +44,9 @@ pod2usage(-verbose => 2) if $help;
 my $username = shift // die 'missing username';
         
 my $dbh = db_connect;
+my $p = Pools->new( $dbh );
 
-my $r =  Pools::get_prefixes( $dbh , $username ) ;
+my $r =  $p->get_prefixes( $username ) ;
 
 say $r->{framed};
 say $r->{delegated};
@@ -72,22 +73,6 @@ Print a brief help message and exit.
 =item B<-d>
 
 Enable more verbose output
-
-=item B<-host|-h> 
-
-Connect to mysql on this hostname.
-
-=item B<-user|-u>
-
-Use this mysql username when connecting.
-
-=item B<-p|-password>
-
-Use this mysql password when connecting.
-
-=item B<-db> 
-
-Use this database when connecting.
 
 =back
 
