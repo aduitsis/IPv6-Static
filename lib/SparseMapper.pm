@@ -8,6 +8,12 @@ my $DEBUG = 0;
 
 use integer;
 
+# return a list of powers of two whose sum is equal to the argument 
+#
+# pack the number as a 32-bit integer (MSB first), the unpack as bitstring 
+# reverse the order of the bits, convert to list, now least significant if first on the list
+# report the position of each 1 in the string, not forgetting to incr $e in each turn
+# assemble list (map), reverse again
 sub analyze_2s_powers {
 	my $e = 0;
 	reverse map { my $ret = ($_)? $e : undef ; $e++ ; defined($ret)? $ret : ()   } reverse split '' , ( unpack 'B*', pack 'N',$_[0] ) 
