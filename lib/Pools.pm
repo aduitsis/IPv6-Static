@@ -19,7 +19,6 @@ use Term::ReadLine;
 
 use FindBin qw( $Bin ) ;
 
-use lib $Bin.'/../IPv6-Static/lib';
 use lib $Bin.'/../../ip6prefix/lib';
 use IPv6::Static;
 use IPv6::Address;

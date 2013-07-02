@@ -20,6 +20,7 @@ use DBHelper;
 use Pod::Usage;
 use IPv6::Static;
 use Pools;
+use POSIX;
 
 my $save_filename;
 my $load_filename;
@@ -58,6 +59,7 @@ if ( defined( $save_filename ) ) {
 
 my %counter;
 
+UNIT: 
 for my $unit (keys %{ $units } ) {
 	$DEBUG && p $units->{ $unit } ;
 	say STDERR $unit;
@@ -96,12 +98,39 @@ for my $unit (keys %{ $units } ) {
 
 	my $r =  $p->get_prefixes( $unit ) ;
 	say STDERR "\t".$r->{framed}.' '.$r->{delegated};
+
+	my $n_accounts = scalar @{ $units->{ $unit }->{accounts} };
+	if( $n_accounts == 0 ) { 
+		say STDERR "WARNING: unit $unit has no accounts";
+		next UNIT;
+	}			
+	my $split_delegated = ceil( log( $n_accounts ) / log( 2 ) );
+	say STDERR "2^$split_delegated accounts for $unit";
+
+	my $split_framed = 64 - $r->{framed}->get_prefixlen;
+
+	my @framed = $r->{framed}->split( $split_framed );
+	my @delegated = $r->{delegated}->split( $split_delegated );
+
+	if( $split_delegated > $split_framed ) { 
+		say STDERR "\tEXTREME CAUTION: Unit $unit requires 2^$split_delegated /64 and /56 pairs, but we can only provide 2^$split_framed. Skipping this one";
+		next UNIT;
+	}	
 	
 	if( $yes ) {
-		for my $account ( @{ $units->{ $unit }->{accounts} } ) {	
-			say STDERR "\taccount ".$account->{account};
-			my $mods = $ldap->write_attributes( $account->{ ldap_object } , radiusFramedIPv6Prefix => $r->{framed}->to_string , radiusDelegatedIPv6Prefix => $r->{delegated}->to_string ) ;
-			say STDERR "\tchanges: ".join(',',map { $_ . '=' . $mods->{$_} } (keys %{$mods})) if( $mods );
+		ACCOUNT:
+		for my $account ( sort @{ $units->{ $unit }->{accounts} } ) {	
+			my ( $framed , $delegated  ) = ( shift @framed , shift @delegated  );
+			if( ! defined( $framed ) ) { 
+				say STDERR 'No framed prefix left for '.$account->{ account };
+				next ACCOUNT;
+			}
+			if( ! defined( $delegated ) ) { 
+				die 'internal error! there should always be a delegated prefix available';
+			}
+			say STDERR "\taccount ". $account->{ account } .' '.$framed->to_string.' '.$delegated->to_string;		
+			#my $mods = $ldap->write_attributes( $account->{ ldap_object } , radiusFramedIPv6Prefix => $r->{framed}->to_string , radiusDelegatedIPv6Prefix => $r->{delegated}->to_string ) ;
+			#say STDERR "\tchanges: ".join(',',map { $_ . '=' . $mods->{$_} } (keys %{$mods})) if( $mods );
 		}
 	}
 
