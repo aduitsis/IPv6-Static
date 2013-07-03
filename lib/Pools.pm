@@ -8,6 +8,7 @@ use open qw(:std :utf8);
 use charnames qw(:full :short);
 use warnings qw(FATAL utf8);
 use strict;
+use Carp;
 
 use Net::LDAP;
 use Data::Printer;
@@ -82,7 +83,7 @@ sub get_prefixes {
 	my $self = shift // die 'incorrect call';
 	my $username = shift // die 'incorrect call';
 
-	my $record = IPv6::Static::get_in_use_record( $self->dbh , $username ) // die 'this user does not exist';
+	my $record = IPv6::Static::get_in_use_record( $self->dbh , $username ) // confess 'this user does not exist';
 
 	return { 
 		framed => $self->calculate_prefix( $record->{address}, $record->{group_id}, 'framed' ),
