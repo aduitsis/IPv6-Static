@@ -21,6 +21,7 @@ use Pod::Usage;
 use IPv6::Static;
 use Pools;
 use POSIX;
+use Carp;
 
 my $save_filename;
 my $load_filename;
@@ -149,9 +150,9 @@ for my $unit (keys %{ $units } ) {
 	$counter{ $category } += 1;
 }
 
-say STDERR'Number of units: '.scalar(keys %{ $units } );
-say STDERR'Number of accounts: '.
-say STDERR'Category breakdown: ';
+say STDERR 'Number of units: '.scalar(keys %{ $units } );
+say STDERR 'Number of accounts: '.$overall_accounts
+say STDERR 'Category breakdown: ';
 p %counter;
 say STDERR 'Unit counts grouped by account number:';
 p %account_counter;
