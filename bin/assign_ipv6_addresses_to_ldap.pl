@@ -93,7 +93,7 @@ for my $unit (keys %{ $units } ) {
 			}
 		}
 		else {
-			say STDERR "$unit does not exist in database, so skipping to the next unit";
+			say STDERR "\t$unit does not exist in database, so skipping to the next unit";
 			next UNIT
 		}
 	} 
