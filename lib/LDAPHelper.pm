@@ -37,7 +37,7 @@ if( -f $settings_file ) {
         die $@ if($@);
 }
 else {
-        say STDERR 'settings file missing'
+        die "settings file $settings_file missing"
 }
 
 sub new {
