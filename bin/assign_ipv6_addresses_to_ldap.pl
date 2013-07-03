@@ -28,8 +28,9 @@ my $DEBUG;
 my $delete;
 my $yes;
 my $help;
+my $dry;
 
-GetOptions('help|?'=> \$help, 'd|debug' => \$DEBUG , 's|save=s' => \$save_filename , 'l|load=s' => \$load_filename , 'delete' => \$delete , 'yes|y' => \$yes);
+GetOptions('help|?'=> \$help, 'd|debug' => \$DEBUG , 's|save=s' => \$save_filename , 'l|load=s' => \$load_filename , 'delete' => \$delete , 'yes|y' => \$yes, 'n' => \$dry );
 
 pod2usage(-verbose => 2) if $help;
 
@@ -80,7 +81,8 @@ for my $unit (keys %{ $units } ) {
 	say STDERR "\t$category";
 
 	if( ! $p->exists_entry( $unit ) )  {
-		if( $yes ) {
+		say STDERR "$unit does not exist in database";
+		if( ! $dry ) {
 			my $ret = eval {
 				IPv6::Static::create_account($dbh,$category,$unit)
 			};
@@ -176,6 +178,11 @@ assign_ipv6_addresses_to_ldap.pl -- assign IPv6 prefixes to every account in the
 =item B<-help>
 
 Print a brief help message and exit.
+
+=item B<-n>
+
+Dry run, i.e. do not apply changes to database. Unless this option is used, 
+changes *WILL* be made to the database by default
 
 =item B<-d>
 
