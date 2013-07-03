@@ -126,8 +126,8 @@ for my $unit (keys %{ $units } ) {
 	my @delegated = $r->{delegated}->split( $split_delegated );
 
 	if( $split_delegated > $split_framed ) { 
-		say STDERR "\tEXTREME CAUTION: Unit $unit requires 2^$split_delegated /64 and /56 pairs, but we can only provide 2^$split_framed. Skipping this one";
-		next UNIT;
+		say STDERR "\tEXTREME CAUTION: Unit $unit requires 2^$split_delegated /64 and /56 pairs, but we can only provide 2^$split_framed";
+		#next UNIT
 	}	
 	
 	if( $yes ) {
@@ -136,14 +136,16 @@ for my $unit (keys %{ $units } ) {
 			my ( $framed , $delegated  ) = ( shift @framed , shift @delegated  );
 			if( ! defined( $framed ) ) { 
 				say STDERR 'No framed prefix left for '.$account->{ account };
+				say STDERR 'Removing all relevant attributes from account '.$account->{ account };
+				$ldap->delete_attributes( $account->{ ldap_object } , 'radiusFramedIPv6Prefix', 'radiusDelegatedIPv6Prefix' );
 				next ACCOUNT;
 			}
 			if( ! defined( $delegated ) ) { 
 				die 'internal error! there should always be a delegated prefix available';
 			}
 			say STDERR "\taccount ". $account->{ account } .' '.$framed->to_string.' '.$delegated->to_string;		
-			#my $mods = $ldap->write_attributes( $account->{ ldap_object } , radiusFramedIPv6Prefix => $r->{framed}->to_string , radiusDelegatedIPv6Prefix => $r->{delegated}->to_string ) ;
-			#say STDERR "\tchanges: ".join(',',map { $_ . '=' . $mods->{$_} } (keys %{$mods})) if( $mods );
+			my $mods = $ldap->write_attributes( $account->{ ldap_object } , radiusFramedIPv6Prefix => $framed->to_string , radiusDelegatedIPv6Prefix => $delegated->to_string ) ;
+			say STDERR "\tchanges: ".join(',',map { $_ . '=' . $mods->{$_} } (keys %{$mods})) if( $mods );
 		}
 	}
 

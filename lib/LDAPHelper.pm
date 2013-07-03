@@ -14,6 +14,7 @@ use Data::Dump qw(pp);
 use Getopt::Long;
 use YAML qw(Dump);
 use FindBin qw($Bin);
+use Carp;
 
 my $ldap_uri;
 my $ldap_bind_dn;
@@ -79,7 +80,7 @@ sub modify {
 	my $self = shift(@_) // die 'incorrect call';
 	my $dn = shift(@_) // die 'incorrect call';
 	my $mesg = $self->{ldap}->modify( $dn , @_ );
-	$mesg->code && die $mesg->error;
+	$mesg->code && confess $mesg->error;
 }
 
 sub DESTROY {
@@ -128,6 +129,8 @@ sub get_combination {
 
 	my %locality;
 
+	#TODO: check for accounts without unit perhaps?
+
 	for my $account ( keys %{$accounts} ) {
 		for my $locality ( @{ $accounts->{$account}->{ attributes }->{l} } ) {
 			push @{ $locality{ $locality } } , 
@@ -154,6 +157,29 @@ sub get_combination {
 	return $units;
 }
 
+sub delete_attributes {
+	my $self = shift( @_ ) // die 'incorrect call';
+	my $entry = shift( @_ ) // die 'missing entry';
+
+	my @attributes = ( @_ );
+
+	my $delete_attributes = [];
+	
+	for my $attribute ( @attributes ) {
+		if( grep {  $_ eq $attribute  } ( $entry->attributes) ) {
+			push @{$delete_attributes}, $attribute;
+			say STDERR "\t\tdeleting $attribute";
+		}
+		else {
+			say STDERR "\t\t$attribute not set";
+		}
+	}
+		
+	$self->modify( $entry, delete => $delete_attributes ) if @{ $delete_attributes }; #the array evaluates to true only when there is at least one element
+
+	return 1;
+}
+	
 sub write_attributes {
 	my $self = shift( @_ ) // die 'incorrect call';
 	my $entry = shift( @_ ) // die 'missing entry';
@@ -173,6 +199,7 @@ sub write_attributes {
 	}
 	if( %{ $modifications } ) {  #if the hash is emtpy, evaluates false in boolean context
 		$self->modify( $entry , replace => $modifications );
+
 		return $modifications
 	}
 	else {
