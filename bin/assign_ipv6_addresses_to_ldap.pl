@@ -151,7 +151,7 @@ for my $unit (keys %{ $units } ) {
 }
 
 say STDERR 'Number of units: '.scalar(keys %{ $units } );
-say STDERR 'Number of accounts: '.$overall_accounts
+say STDERR 'Number of accounts: '.$overall_accounts;
 say STDERR 'Category breakdown: ';
 p %counter;
 say STDERR 'Unit counts grouped by account number:';
