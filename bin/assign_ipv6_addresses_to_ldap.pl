@@ -59,6 +59,8 @@ if ( defined( $save_filename ) ) {
 
 
 my %counter;
+my $overall_accounts = 0;
+my %account_counter;
 
 UNIT: 
 for my $unit (keys %{ $units } ) {
@@ -73,10 +75,11 @@ for my $unit (keys %{ $units } ) {
 		Heuristics::classify( $units->{$unit} ) 
 	};
 	if($@) {
-		say STDERR "WARNING: Cannot classify $unit.\nError was: $@";
+		say STDERR "WARNING: Cannot classify $unit.\nSkipping to the next unit.\n\tError returned follows:\n $@";
+		next UNIT
 	} 
 
-	my $category = DBHelper::categorize( $cat );
+	my $category = DBHelper::categorize( $cat ) // confess 'internal error';
 
 	say STDERR "\t$category";
 
@@ -106,11 +109,15 @@ for my $unit (keys %{ $units } ) {
 
 	my $n_accounts = scalar @{ $units->{ $unit }->{accounts} };
 	if( $n_accounts == 0 ) { 
-		say STDERR "WARNING: unit $unit has no accounts";
+		say STDERR "\tWARNING: unit $unit has no accounts";
 		next UNIT;
 	}			
 	my $split_delegated = ceil( log( $n_accounts ) / log( 2 ) );
-	say STDERR "2^$split_delegated accounts for $unit";
+	say STDERR "\t2^$split_delegated accounts for $unit";
+	
+	# keep statistics
+	$overall_accounts +=  $n_accounts ;
+	$account_counter{ $n_accounts }++;
 
 	my $split_framed = 64 - $r->{framed}->get_prefixlen;
 
@@ -142,7 +149,12 @@ for my $unit (keys %{ $units } ) {
 	$counter{ $category } += 1;
 }
 
+say STDERR'Number of units: '.scalar(keys %{ $units } );
+say STDERR'Number of accounts: '.
+say STDERR'Category breakdown: ';
 p %counter;
+say STDERR 'Unit counts grouped by account number:';
+p %account_counter;
 
 if( $delete ) {
 	my $usernames = IPv6::Static::get_all_usernames( $dbh ) ;
