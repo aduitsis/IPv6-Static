@@ -81,7 +81,6 @@ for my $unit (keys %{ $units } ) {
 	say STDERR "\t$category";
 
 	if( ! $p->exists_entry( $unit ) )  {
-		say STDERR "$unit does not exist in database";
 		if( ! $dry ) {
 			my $ret = eval {
 				IPv6::Static::create_account($dbh,$category,$unit)
@@ -92,6 +91,10 @@ for my $unit (keys %{ $units } ) {
 			else {
 				say STDERR "\t".$ret->{status} ;
 			}
+		}
+		else {
+			say STDERR "$unit does not exist in database, so skipping to the next unit";
+			next UNIT
 		}
 	} 
 	else {
