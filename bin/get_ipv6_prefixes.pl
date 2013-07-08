@@ -46,10 +46,17 @@ my $username = shift // die 'missing username';
 my $dbh = db_connect;
 my $p = Pools->new( $dbh );
 
-my $r =  $p->get_prefixes( $username ) ;
+my $record = $p->get_entry( $username );
+say join(' ',map { $_.' => '.$record->{ $_ } } keys %{$record} );
 
+my $cat = $p->get_category( $username );
+say $cat;
+
+
+my $r =  $p->get_prefixes( $username ) ;
 say $r->{framed};
 say $r->{delegated};
+
 
 
 __END__

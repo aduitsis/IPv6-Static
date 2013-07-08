@@ -51,8 +51,6 @@ sub update_stat {
 =item B<get_group ($dbh,$group_name)>
 
 Utility function, takes in a group name, returns a unique number for that group.
-Current implementation based on a constant from IPv6::Static::Settings.
-In the future, implement using a database as necessary
 
 =cut 
 
@@ -64,6 +62,16 @@ sub get_group {
 	$sth->execute($group_name) or confess $sth->errstr;
 	defined( my $row = $sth->fetchrow_hashref ) or confess "no such group: $group_name";
 	return { id => $row->{id} , limit => $row->{maximum} };
+}
+
+sub get_group_id {
+	defined( my $dbh = shift ) or confess 'incorrect call';
+	defined( my $group_id = shift ) or confess 'incorrect call';
+
+	my $sth = $dbh->prepare('select name from groups where id=?') or confess $dbh->errstr;
+	$sth->execute($group_id) or confess $sth->errstr;
+	defined( my $row = $sth->fetchrow_hashref ) or confess "no such group id: $group_id";
+	return $row->{ name } 
 }
 
 =item B<get_user_record ($dbh,$group_id,$username)>

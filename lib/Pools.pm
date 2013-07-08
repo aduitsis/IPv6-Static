@@ -78,6 +78,39 @@ sub exists_entry {
 
 	return 1;
 }		
+
+sub create_entry {
+	my $self = shift // die 'incorrect call';
+	my $username = shift // die 'incorrect call';
+	my $group_name = shift // die 'incorrect call';
+
+	return IPv6::Static::create_account($self->dbh,$group_name,$username);
+}
+
+sub delete_entry {
+	my $self = shift // die 'incorrect call';
+	my $username = shift // die 'incorrect call';
+	my $group_name = shift // die 'incorrect call';
+
+	return IPv6::Static::delete_account( $self->dbh, $group_name, $username )
+}
+
+sub get_category {
+	my $self = shift // die 'incorrect call';
+	my $username = shift // die 'incorrect call';
+
+	my $record = IPv6::Static::get_in_use_record( $self->dbh , $username ) // confess 'this user does not exist';
+
+	return IPv6::Static::get_group_id( $self->dbh , $record->{ group_id } )
+}
+
+sub get_entry {
+	my $self= shift // die 'incorrect call';
+	my $username = shift // die 'incorrect call';
+	
+	my $record = IPv6::Static::get_user_record_blind( $self->dbh , $username );
+}
+	
 	
 sub get_prefixes { 
 	my $self = shift // die 'incorrect call';
@@ -118,6 +151,11 @@ sub get_pools {
 	}
 
 	$result;
+}
+
+sub map_over_entries {
+	my $self = shift // die 'incorrect call';
+	IPv6::Static::map_over_entries( $self->dbh , @_ )
 }
 
 1;
