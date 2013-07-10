@@ -22,10 +22,10 @@ my $ldap_bind_passwd;
 my $ldap_search_base;
 my $ldap_units_base;
 my $ldap_units_filter;
-my @ldap_units_attributes;
+my $ldap_units_attributes;
 my $ldap_accounts_base;
 my $ldap_accounts_filter;
-my @ldap_accounts_attributes;
+my $ldap_accounts_attributes;
 
 my $output = $Bin.'/../tmp.tmp';
 
@@ -41,21 +41,40 @@ else {
         die "settings file $settings_file missing"
 }
 
+my %settings;
+$settings{ uri } = $ldap_uri;
+$settings{ bind_dn } = $ldap_bind_dn;
+$settings{ bind_passwd } = $ldap_bind_passwd;
+$settings{ search_base } = $ldap_search_base;
+$settings{ units_base } = $ldap_units_base;
+$settings{ units_filter } = $ldap_units_filter;
+$settings{ units_attributes } = $ldap_units_attributes;
+$settings{ accounts_base } = $ldap_accounts_base;
+$settings{ accounts_filter } = $ldap_accounts_filter;
+$settings{ accounts_attributes } = $ldap_accounts_attributes;
+
 sub new {
 	my $class = shift(@_) // die 'incorrect call';
+	my %options = ( @_ );
 
-	my $ldap = Net::LDAP->new( $ldap_uri , debug => 0 ) or die $!;
+	my $self = {};
 
-	my $mesg = $ldap->bind( $ldap_bind_dn , password=>$ldap_bind_passwd );
+	for ( qw( uri bind_dn bind_passwd search_base units_base units_filter accounts_base accounts_filter units_attributes accounts_attributes ) ) {
+		$self->{$_} = ( exists $options{ $_ } )? $options{ $_ } : $settings{ $_ } ;
+	}
+
+	$self->{ldap} = Net::LDAP->new( $self->{uri} , debug => 0 ) or die $!;
+
+	my $mesg = $self->{ldap}->bind( $self->{bind_dn} , password=>$self->{bind_passwd} );
 	$mesg->code && die $mesg->error; #just to make sure everything went ok
 
-	return bless { ldap => $ldap }, $class;
+	return bless $self, $class;
 }
 
 
 sub search {
 	my $self = shift(@_) // die 'incorrect call';
-	my $base = shift(@_) // $ldap_search_base;
+	my $base = shift(@_) // $self->{search_base};
 	my $scope = shift(@_) // 'sub';
 	my $attributes = shift(@_) // [ qw( ) ] ;
 	my $filter = shift(@_) // 'objectclass=*';
@@ -89,11 +108,13 @@ sub DESTROY {
 }
 
 sub get_units_entries { 
-	$_[0]->search( $ldap_units_base , 'sub' , \@ldap_units_attributes, $ldap_units_filter ) ;
+	my $self = shift // die 'incorrect call';
+	$self->search( $self->{units_base} , 'sub' , $self->{ units_attributes }, $self->{ units_filter } ) ;
 }
 
 sub get_accounts_entries {
-	$_[0]->search( $ldap_accounts_base, 'sub', \@ldap_accounts_attributes, $ldap_accounts_filter );
+	my $self = shift // die 'incorrect call';
+	$self->search( $self->{accounts_base}, 'sub', $self->{ accounts_attributes }, $self->{ accounts_filter } );
 }
 
 sub entries_to_data {
@@ -121,15 +142,21 @@ sub get_accounts {
 	entries_to_data( $_[0]->get_accounts_entries );
 }
 
+sub additional_account_filter {
+	$_[0]->{ accounts_filter } = '('. $_[1] .'(' . $_[2] . ')' . $_[0]->{ accounts_filter } . ')'
+}
+
+sub set_units_base {
+	$_[0]->{ units_base } = $_[1];
+}
+	
+
 sub get_combination {
 	my $self = shift( @_ ) // die 'incorrect call';
 
-	my $units = $self->get_units;
 	my $accounts = $self->get_accounts;
 
 	my %locality;
-
-	#TODO: check for accounts without unit perhaps?
 
 	for my $account ( keys %{$accounts} ) {
 		for my $locality ( @{ $accounts->{$account}->{ attributes }->{l} } ) {
@@ -143,6 +170,8 @@ sub get_combination {
 			; 
 		}
 	}
+
+	my $units = $self->get_units;
 
 	for my $unit ( keys %{$units} ) {
 		if( exists( $locality{ $unit } ) ) {

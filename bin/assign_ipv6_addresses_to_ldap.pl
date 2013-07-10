@@ -13,6 +13,7 @@ use Data::Printer;
 use FindBin qw($Bin);
 use lib $Bin.'/../lib/';
 use LDAPHelper;
+use AccountClassify;
 use Storable qw(nstore retrieve);
 use Getopt::Long;
 use Heuristics;
@@ -50,6 +51,13 @@ binmode STDOUT, ":encoding(utf8)";
 binmode STDERR, ":encoding(utf8)";
 
 my $ldap = LDAPHelper->new;
+
+my $exact_unit;
+if( defined( $exact_unit = shift ) ) {
+	$ldap->additional_account_filter('&','l='.$exact_unit);
+	$ldap->set_units_base( $exact_unit );
+}
+
 my $p = Pools->new( db_connect );
 
 my %acct_usernames;
@@ -88,10 +96,14 @@ my $overall_accounts = 0;
 my $accounts_in_use = 0;
 my %account_counter;
 my %account_in_use_counter;
+my %account_in_use;
+
+my $statistics;
 
 UNIT: 
 for my $unit (keys %{ $units } ) {
 
+	$statistics->{ 'unit count' } ++;
 	
 	$DEBUG && p $units->{ $unit } ;
 	say STDERR BOLD GREEN $unit;
@@ -99,6 +111,7 @@ for my $unit (keys %{ $units } ) {
 	# warn if there are non-ascii characters in the unit name
 	if ( $unit =~ /\P{ASCII}/ ) {
 		say STDERR RED "\tWARNING: '$unit' contains non-ASCII characters";
+		#push @{ $statistics->{ 'units with non-ASCII characters in DN' } }, $unit;
 	}
 
 	# classify the unit using the Heuristics library
@@ -114,8 +127,7 @@ for my $unit (keys %{ $units } ) {
 	my $category = DBHelper::categorize( $cat ) // confess 'internal error';
 	say STDERR YELLOW "\t$category";
 
-	#maintain stats
-	$counter{ $category } += 1;
+	$statistics->{ 'unit category count' }->{ $category }++;
 
 	#check database for record
 	if( ! $p->exists_entry( $unit ) )  {
@@ -128,6 +140,7 @@ for my $unit (keys %{ $units } ) {
 			say STDERR YELLOW "\tskipping to the next unit since we in dry run mode";
 			next UNIT
 		}
+		$statistics->{'units found for the first time'}++;
 	} 
 	else {
 		my $db_category = $p->get_category( $unit );
@@ -147,7 +160,7 @@ for my $unit (keys %{ $units } ) {
 				say STDERR RED "\t$unit of $db_category should be deleted but we are on dry run mode";
 				next UNIT
 			}
-						
+			push @{ $statistics->{ 'units that changed category' } }, $unit;
 		}
 	}
 
@@ -155,50 +168,80 @@ for my $unit (keys %{ $units } ) {
 	say STDERR BOLD BLACK "\tFramed: ".RESET.WHITE.$r->{framed}.BOLD.BLACK.' Delegated: '.RESET.WHITE.$r->{delegated};
 
 	my @accounts = @{ $units->{ $unit }->{accounts} };
-	$overall_accounts += scalar( @accounts );
-	$account_counter{ scalar( @accounts ) }++;
+
+
+	$statistics->{ 'overall accounts in directory'} += scalar( @accounts );
+	$statistics->{'overall accounts per unit'}->{ scalar( @accounts ) }++;
 
 	my @used_accounts;
 	my $all_accounts_same_prefix = 0;
 
 	if( @accounts == 0 ) { 
 		say STDERR RED "\tWARNING: unit $unit has no accounts";
+		say STDERR '';
 		next UNIT;
 	}
-	elsif( @accounts == 1 ) {
+
+	say STDERR BOLD BLACK "\tLDAP accounts: ".YELLOW.join ' , ',map { $_->{uid} } @accounts;
+
+	if( @accounts == 1 ) {
 		say STDERR GREEN "\tOK:".RESET.WHITE.' unit has exactly 1 account';
 		@used_accounts = @accounts;
 	} 
 	else {
 		if( $have_accounting  ) { 
 			@used_accounts = grep { $acct_usernames{ $_->{uid} } } @accounts;
+			push @{ $account_in_use{ scalar @used_accounts } }, $unit;
+			
+			$statistics->{'accounting accounts'} += scalar @used_accounts;
+			$statistics->{'accounting accounts per unit'}->{ scalar @used_accounts }++;
+
 			if( ! @used_accounts ) { 
 				say STDERR YELLOW "\tNo accounting for any known account ... will apply the same prefixes to all accounts";
 				$all_accounts_same_prefix = 1;
 				@used_accounts = @accounts;
+
+			} 
+			elsif( @used_accounts > 1 ) {
+				# we only wanted one account, but we got more than 1
+				# why don't pass it over to AccountClassify and see if it can sort it out?
+				# TODO: make sure that leaving out accounts that are connecting is ok
+				# @used_accounts = AccountClassify::weed( \@used_accounts );
+				say STDERR YELLOW "\tAccounting has more than 1 acount connecting from this unit";
 			}
 		} 
 		else { 
-			@used_accounts = @accounts;
+			@used_accounts = AccountClassify::weed( \@accounts );
+			$statistics->{'accounts number returned from classifier'} += scalar @used_accounts;
+			$statistics->{'accounts per unit according to classifier'}->{ scalar @used_accounts }++;
+			if( ! @used_accounts ) {
+				say STDERR BOLD RED "\tERROR: cannot find any router or official accounts for $unit";
+				say STDERR '';
+				next UNIT;
+			}
+			elsif( @used_accounts > 1 ) {
+				say STDERR BOLD RED "\tmore than 1 router or official accounts";
+			}
 		}
-		#if( @used_accounts == 1 ) {
-		#	say "\tOK: unit $unit uses only account $used_accounts[1]";
-		#}
-		#else { 
-		#	say "\tNOTICE: unit $unit uses ".scalar(@used_accounts).' accounts';
-		#}
-		say STDERR GREEN "\t".scalar(@used_accounts)." accounts found in accounting records";
-		#p @accounts;
-		#p @used_accounts;
-		if( @used_accounts > 8 ) {
-				
+
+		say STDERR GREEN "\t".scalar(@used_accounts)." used accounts found";
+
+		say STDERR BOLD BLACK "\tused accounts: ".YELLOW.join ' , ',map { $_->{uid} } @used_accounts;
+
+		if( @used_accounts > 3 && ! $all_accounts_same_prefix ) {
+			push @{ $statistics->{'units exceeding account limit'} },$unit;
+			say STDERR BOLD RED "\tERROR: account limit 4 exceeded (found ".scalar(@used_accounts).") for $unit";
+			say STDERR '';
+			next UNIT;
 		}
 	}		
 
+	$statistics->{'effective accounts'} += scalar @used_accounts;
+	$statistics->{'effective acounts per unit'}->{ scalar @used_accounts }++;
+	$statistics->{'effective acounts per category'}->{ $category } += scalar @used_accounts;
+
 	my @unused_accounts = grep { my $a = $_; ! grep { $_->{uid} eq $a->{uid} } @used_accounts } @accounts;
 
-	say STDERR BOLD BLACK "\tLDAP accounts: ".YELLOW.join ' , ',map { $_->{uid} } @accounts;
-	say STDERR BOLD BLACK "\tused accounts: ".YELLOW.join ' , ',map { $_->{uid} } @used_accounts;
 	say STDERR BOLD BLACK "\tunused accounts: ".YELLOW.join ' , ',map { $_->{uid} } @unused_accounts;
 
 	my (@framed,@delegated);
@@ -209,10 +252,6 @@ for my $unit (keys %{ $units } ) {
 		my $split_delegated = ceil( log( $n_accounts ) / log( 2 ) );
 		say STDERR GREEN "\tneed ".2**$split_delegated.' '.(($split_delegated == 0)? 'prefix' : 'prefixes');
 		
-		# keep statistics
-		$account_in_use_counter{ $n_accounts }++;
-		$accounts_in_use += $n_accounts;
-
 		my $split_framed = 64 - $r->{framed}->get_prefixlen;
 
 		@framed = ( $all_accounts_same_prefix )?
@@ -254,18 +293,13 @@ for my $unit (keys %{ $units } ) {
 		}
 	}
 
-	say '';
+	say STDERR '';
 }
 
-say STDERR 'Number of units: '.scalar(keys %{ $units } );
-say STDERR 'Number of accounts: '.$overall_accounts;
-say STDERR 'Number of accounts in use: '.$accounts_in_use;
-say STDERR 'Category breakdown: ';
-p %counter;
-say STDERR 'Unit counts grouped by account number:';
-p %account_counter;
-say STDERR 'Unit counts grouped by account in use number:';
-p %account_in_use_counter;
+
+#for (sort { $a <=> $b } keys %account_in_use) {
+#	say $_.' '.join(' ',@{ $account_in_use{ $_ } } );
+#}
 
 DELETE:
 if( $delete ) {
@@ -279,6 +313,7 @@ if( $delete ) {
 		say STDERR BOLD BLACK $unit.' '.$db_category;
 
 		if( ! exists $units->{ $unit } ) {
+			push @{ $statistics->{ 'deleted units from database' } },$unit;
 			say STDERR RED "\t$unit is missing from the directory";
 			if( ! $dry ) {
 				say STDERR CYAN "\tDeleting $unit of $db_category from the database...";
@@ -295,6 +330,8 @@ if( $delete ) {
 		}
 	});
 }
+
+p $statistics unless $exact_unit;
 
 __END__
 
