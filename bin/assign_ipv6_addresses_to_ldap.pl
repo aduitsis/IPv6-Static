@@ -41,9 +41,11 @@ my $yes;
 my $help;
 my $dry;
 
+my $all;
+
 my $usernames_file;
 
-GetOptions('help|?'=> \$help, 'd|debug' => \$DEBUG , 's|save=s' => \$save_filename , 'l|load=s' => \$load_filename , 'delete' => \$delete , 'yes|y' => \$yes, 'n' => \$dry , 'usernames=s' => \$usernames_file );
+GetOptions('help|?'=> \$help, 'd|debug' => \$DEBUG , 's|save=s' => \$save_filename , 'l|load=s' => \$load_filename , 'delete' => \$delete , 'yes|y' => \$yes, 'n' => \$dry , 'usernames=s' => \$usernames_file , 'all' => \$all );
 
 pod2usage(-verbose => 2) if $help;
 
@@ -56,6 +58,12 @@ my $exact_unit;
 if( defined( $exact_unit = shift ) ) {
 	$ldap->additional_account_filter('&','l='.$exact_unit);
 	$ldap->set_units_base( $exact_unit );
+}
+else {
+	if( ! $all ) {
+		say 'Cannot work on all the units unless the --all option is specified';
+		exit
+	}
 }
 
 my $p = Pools->new( db_connect );
@@ -341,7 +349,17 @@ assign_ipv6_addresses_to_ldap.pl -- assign IPv6 prefixes to every account in the
 
 =head1 SYNOPSIS
 
- assign_ipv6_addresses_to_ldap.pl [ options ] 
+ assign_ipv6_addresses_to_ldap.pl [ options ] [ unit DN ]
+
+=head1 MODES OF OPERATION
+
+If the unit DN is specified in the command line, the program will work
+only on the specified unit and all the accounts that point to it. The
+--delete option does not apply in this case. 
+
+If a unit DN is not supplied, the program will query and work on all the
+units in the directory. To actually work on all the units, the --all
+option must also be present to avoid accidental invocations.
 
 =head1 OPTIONS
 
@@ -359,6 +377,17 @@ changes *WILL* be made to the database by default
 =item B<-d>
 
 Enable debug output
+
+=item B<--all>
+
+Actually work on all the units that can be found in the directory.
+
+
+=item B<--usernames FILE>
+
+Read a usernames that have been used from FILE. FILE is line separated,
+one line per username. Typically, these usernames will be used to cross
+reference which of the accounts have actually been used.
 
 =item B<--delete> 
 
