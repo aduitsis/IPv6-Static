@@ -40,12 +40,13 @@ my $delete;
 my $yes;
 my $help;
 my $dry;
+my $skip;
 
 my $all;
 
 my $usernames_file;
 
-GetOptions('help|?'=> \$help, 'd|debug' => \$DEBUG , 's|save|store=s' => \$save_filename , 'l|load=s' => \$load_filename , 'delete' => \$delete , 'yes|y' => \$yes, 'n' => \$dry , 'usernames|username|accounting|acct=s' => \$usernames_file , 'all' => \$all );
+GetOptions('help|?'=> \$help, 'd|debug' => \$DEBUG , 's|save|store=s' => \$save_filename , 'l|load=s' => \$load_filename , 'delete' => \$delete , 'yes|y' => \$yes, 'n' => \$dry , 'usernames|username|accounting|acct=s' => \$usernames_file , 'all' => \$all, 'skip' => \$skip );
 
 pod2usage(-verbose => 2) if $help;
 
@@ -108,6 +109,11 @@ my %account_in_use;
 
 my $statistics;
 
+my %accounts;
+
+#if the user has chosen to --skip
+$units = {} if $skip;
+
 UNIT: 
 for my $unit (keys %{ $units } ) {
 
@@ -126,7 +132,7 @@ for my $unit (keys %{ $units } ) {
 	my $cat = eval { 
 		Heuristics::classify( $units->{$unit} ) 
 	};
-	if($@) {
+	if( $@ ) {
 		say STDERR RED "WARNING: Cannot classify $unit.\nSkipping to the next unit.\n\tError returned follows:\n $@";
 		next UNIT
 	} 
@@ -136,44 +142,6 @@ for my $unit (keys %{ $units } ) {
 	say STDERR YELLOW "\t$category";
 
 	$statistics->{ 'unit category count' }->{ $category }++;
-
-	#check database for record
-	if( ! $p->exists_entry( $unit ) )  {
-		say STDERR "\t$unit not in database";
-		if( ! $dry ) {
-			my $ret = $p->create_entry($unit,$category);
-			say STDERR BOLD BLACK "\t".$ret->{status};
-		}
-		else {
-			say STDERR YELLOW "\tskipping to the next unit since we are in dry run mode";
-			next UNIT
-		}
-		$statistics->{'units found for the first time'}++;
-	} 
-	else {
-		my $db_category = $p->get_category( $unit );
-		if( $db_category eq $category ) {
-			say STDERR BOLD BLACK "\trecord already exists in database in the correct category";
-		} 
-		else {
-			say STDERR RED "\trecord exists, but in category $db_category instead of $category";
-			if( ! $dry ) {
-				say STDERR RED "\tDeleting $unit of $db_category from the database...";
-				my $ret = $p->delete_entry( $unit, $db_category );
-				say "\t".$ret->{status};
-				$ret = $p->create_entry($unit,$category);
-				say "\t".$ret->{status};
-			} 
-			else {
-				say STDERR RED "\t$unit of $db_category should be deleted but we are on dry run mode";
-				next UNIT
-			}
-			push @{ $statistics->{ 'units that changed category' } }, $unit;
-		}
-	}
-
-	my $r =  $p->get_prefixes( $unit ) ;
-	say STDERR BOLD BLACK "\tFramed: ".RESET.WHITE.$r->{framed}.BOLD.BLACK.' Delegated: '.RESET.WHITE.$r->{delegated};
 
 	my @accounts = @{ $units->{ $unit }->{accounts} };
 
@@ -242,6 +210,7 @@ for my $unit (keys %{ $units } ) {
 			say STDERR '';
 			next UNIT;
 		}
+
 	}		
 
 	$statistics->{'effective accounts'} += scalar @used_accounts;
@@ -252,43 +221,63 @@ for my $unit (keys %{ $units } ) {
 
 	say STDERR BOLD BLACK "\tunused accounts: ".YELLOW.join ' , ',map { $_->{uid} } @unused_accounts;
 
-	my (@framed,@delegated);
-
 	my $n_accounts = scalar @used_accounts;
 
-	if( @used_accounts ) {
-		my $split_delegated = ceil( log( $n_accounts ) / log( 2 ) );
-		say STDERR GREEN "\tneed ".2**$split_delegated.' '.(($split_delegated == 0)? 'prefix' : 'prefixes');
-		
-		my $split_framed = 64 - $r->{framed}->get_prefixlen;
-
-		@framed = ( $all_accounts_same_prefix )?
-			map { ( $r->{framed}->split( $split_framed ) )[0] }  @used_accounts   #everyone gets the same framed prefix
-			:
-			$r->{framed}->split( $split_framed ); #everyone gets a fair share
-		@delegated = ( $all_accounts_same_prefix )? 
-			map { $r->{delegated} }  @used_accounts   #everyone gets the same delegated prefix
-			: 
-			$r->{delegated}->split( $split_delegated ); #everyone gets a fair share
-
-		if( $split_delegated > $split_framed ) { 
-			say STDERR RED "\tEXTREME CAUTION: Unit $unit requires 2^$split_delegated /64 and /56 pairs, but we can only provide 2^$split_framed";
-			next UNIT
-		}	
-	}
-	else {
-		say STDERR RED "\tWARNING: No used accounts for this unit";
-	}
-	
+	ACCOUNT:
 	for my $account ( sort @used_accounts ) {	
-		my ( $framed , $delegated  ) = ( shift @framed , shift @delegated  );
-		if( ! defined( $framed ) ) { 
-			die 'internal error! there should always be a framed prefix available';
+		my $uid = $account->{ uid };
+
+		# save the value indexed by uid for later
+		$accounts{ $uid } = $account;
+
+		say STDERR BOLD BLACK "\tassigning IPv6 to ".BOLD.WHITE.$uid.RESET." ... ";
+
+		if( ! $p->exists_entry( $uid ) )  {
+			say STDERR "\t\t$uid not in database...";
+			if( ! $dry ) {
+				eval { 
+					my $ret = $p->create_entry($uid,$category);
+					say STDERR BOLD BLACK "\t\t".$ret->{status}
+				};
+				if( $@ ) { 
+					say STDERR BOLD RED "\t\tCannot create a new entry";
+					next ACCOUNT
+				}
+			}
+			else {
+				say STDERR YELLOW "\t\tskipping to the next account since we are in dry run mode";
+				next ACCOUNT;
+			}
+		 	$statistics->{'accounts found for the first time'}++;
 		}
-		if( ! defined( $delegated ) ) { 
-			die 'internal error! there should always be a delegated prefix available';
+		else {
+			my $db_category = $p->get_category( $uid );
+			if( $db_category eq $category ) {
+				say STDERR BOLD BLACK "\t\trecord already exists in database in the correct category";
+			}
+			else {
+				say STDERR RED "\t\trecord exists, but in category $db_category instead of $category";
+				if( ! $dry ) {
+					say STDERR RED "\tDeleting $uid of $db_category from the database...";
+					my $ret = $p->delete_entry( $uid, $db_category );
+					say "\t\t".$ret->{status};
+					$ret = $p->create_entry($uid,$category);
+					say "\t\t".$ret->{status}
+				}
+				else {
+					say STDERR RED "\t\t$uid of $db_category should be deleted but we are on dry run mode";
+					next ACCOUNT
+				}
+				push @{ $statistics->{ 'accounts that changed category' } }, $uid;
+			}
 		}
-		say STDERR CYAN "\t\t". 'ASSIGN: '. $account->{ uid } .' '.$framed->to_string.' '.$delegated->to_string;		
+	
+		my $r =  $p->get_prefixes( $uid ) ;				
+
+		say STDERR BOLD BLACK "\t\tFramed: ".RESET.WHITE.$r->{framed}.BOLD.BLACK.' Delegated: '.RESET.WHITE.$r->{delegated};
+			
+
+		say STDERR CYAN "\t\t". 'ASSIGN: '. $uid .' '.$r->{ framed }->to_string.' '.$r->{ delegated }->to_string;		
 		if( $yes  ) {
 			#my $mods = $ldap->write_attributes( $account->{ ldap_object } , radiusFramedIPv6Prefix => $framed->to_string , radiusDelegatedIPv6Prefix => $delegated->to_string ) ;
 			#say STDERR "\tchanges: ".join(',',map { $_ . '=' . $mods->{$_} } (keys %{$mods})) if( $mods );
@@ -312,24 +301,24 @@ for my $unit (keys %{ $units } ) {
 DELETE:
 if( $delete ) {
 
-	say STDERR "\n\nNow finding entries in the database that are missing in the directory or have changed group in the directory\n\n";
+	say STDERR "\n\nNow finding entries in the database that are missing in the directory\n\n";
 
 	$p->map_over_entries( sub { 
-		my $group_id = $_->{ group_id } ;
-		my $unit = $_->{ username };
-		my $db_category = $p->get_category( $unit );
-		say STDERR BOLD BLACK $unit.' '.$db_category;
+		### is this needed? ### my $group_id = $_->{ group_id } ;
+		my $uid = $_->{ username };
+		my $db_category = $p->get_category( $uid );
+		say STDERR BOLD BLACK $uid.' '.$db_category;
 
-		if( ! exists $units->{ $unit } ) {
-			push @{ $statistics->{ 'deleted units from database' } },$unit;
-			say STDERR RED "\t$unit is missing from the directory";
+		if( ! exists $accounts{ $uid } ) {
+			push @{ $statistics->{ 'deleted accounts from database' } },$uid;
+			say STDERR RED "\t$uid is missing from the directory";
 			if( ! $dry ) {
-				say STDERR CYAN "\tDeleting $unit of $db_category from the database...";
-				my $ret = $p->delete_entry( $unit, $db_category ) ;
+				say STDERR CYAN "\tDeleting $uid of $db_category from the database...";
+				my $ret = $p->delete_entry( $uid, $db_category ) ;
 				say STDERR BOLD BLACK "\t".$ret->{ status } ;
 			} 
 			else {
-				say STDERR CYAN "\t".$unit.' should be deleted but we are on dry run mode';
+				say STDERR CYAN "\t".$uid.' should be deleted but we are on dry run mode';
 			}
 			say '';
 		}
@@ -410,8 +399,13 @@ and can be used later by using the -l option.
 
 =item B<-l | --load FILE>
 
-Insted of exhaustively querying the directory, use a cached copy of its
+Instead of exhaustively querying the directory, use a cached copy of its
 contents which is stored in FILE. See also -s.
+
+=item B<--skip>
+
+Skip the creation and updating of addresses and go to the deletion phase directly. 
+The B<--delete> option should also be used, otherwise the script will do nothing
 
 =back
 
