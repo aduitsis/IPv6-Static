@@ -45,7 +45,7 @@ my $all;
 
 my $usernames_file;
 
-GetOptions('help|?'=> \$help, 'd|debug' => \$DEBUG , 's|save=s' => \$save_filename , 'l|load=s' => \$load_filename , 'delete' => \$delete , 'yes|y' => \$yes, 'n' => \$dry , 'usernames=s' => \$usernames_file , 'all' => \$all );
+GetOptions('help|?'=> \$help, 'd|debug' => \$DEBUG , 's|save|store=s' => \$save_filename , 'l|load=s' => \$load_filename , 'delete' => \$delete , 'yes|y' => \$yes, 'n' => \$dry , 'usernames|username|accounting|acct=s' => \$usernames_file , 'all' => \$all );
 
 pod2usage(-verbose => 2) if $help;
 
@@ -61,7 +61,7 @@ if( defined( $exact_unit = shift ) ) {
 }
 else {
 	if( ! $all ) {
-		say 'Cannot work on all the units unless the --all option is specified';
+		say STDERR 'Cannot work on all the units unless the --all option is specified';
 		exit
 	}
 }
@@ -145,7 +145,7 @@ for my $unit (keys %{ $units } ) {
 			say STDERR BOLD BLACK "\t".$ret->{status};
 		}
 		else {
-			say STDERR YELLOW "\tskipping to the next unit since we in dry run mode";
+			say STDERR YELLOW "\tskipping to the next unit since we are in dry run mode";
 			next UNIT
 		}
 		$statistics->{'units found for the first time'}++;
