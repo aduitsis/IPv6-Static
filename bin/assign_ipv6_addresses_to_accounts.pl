@@ -53,7 +53,7 @@ pod2usage(-verbose => 2) if $help;
 binmode STDOUT, ":encoding(utf8)";
 binmode STDERR, ":encoding(utf8)";
 
-my $ldap = LDAPHelper->new;
+my $ldap = LDAPHelper->new( DEBUG => 1 );
 
 my $exact_unit;
 if( defined( $exact_unit = shift ) ) {
@@ -279,14 +279,14 @@ for my $unit (keys %{ $units } ) {
 
 		say STDERR CYAN "\t\t". 'ASSIGN: '. $uid .' '.$r->{ framed }->to_string.' '.$r->{ delegated }->to_string;		
 		if( $yes  ) {
-			#my $mods = $ldap->write_attributes( $account->{ ldap_object } , radiusFramedIPv6Prefix => $framed->to_string , radiusDelegatedIPv6Prefix => $delegated->to_string ) ;
-			#say STDERR "\tchanges: ".join(',',map { $_ . '=' . $mods->{$_} } (keys %{$mods})) if( $mods );
+			my $mods = $ldap->write_attributes( $account->{ ldap_object } , radiusFramedIPv6Prefix => $r->{ framed }->to_string , radiusDelegatedIPv6Prefix => $r->{ delegated }->to_string ) ;
+			say STDERR "\t\tchanges: ".join(',',map { $_ . '=' . $mods->{$_} } (keys %{$mods})) if( $mods );
 		}
 	}
 	for my $account ( @unused_accounts ) {
 		say STDERR CYAN "\t\t".'DELETE: all prefixes of '.$account->{uid}.' in the directory';
 		if( $yes ) {
-			#$ldap->delete_attributes( $account->{ ldap_object } , 'radiusFramedIPv6Prefix', 'radiusDelegatedIPv6Prefix' );
+			$ldap->delete_attributes( $account->{ ldap_object } , 'radiusFramedIPv6Prefix', 'radiusDelegatedIPv6Prefix' );
 		}
 	}
 

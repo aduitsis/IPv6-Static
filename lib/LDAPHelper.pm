@@ -16,6 +16,8 @@ use YAML qw(Dump);
 use FindBin qw($Bin);
 use Carp;
 
+my $DEBUG;
+
 my $ldap_uri;
 my $ldap_bind_dn;
 my $ldap_bind_passwd;
@@ -56,6 +58,8 @@ $settings{ accounts_attributes } = $ldap_accounts_attributes;
 sub new {
 	my $class = shift(@_) // die 'incorrect call';
 	my %options = ( @_ );
+
+	$DEBUG = 1 if ( $options{ DEBUG } || $options{ debug } || $options{ Debug } );
 
 	my $self = {};
 
@@ -98,6 +102,7 @@ sub search {
 sub modify { 
 	my $self = shift(@_) // die 'incorrect call';
 	my $dn = shift(@_) // die 'incorrect call';
+	### $DEBUG && p @_;
 	my $mesg = $self->{ldap}->modify( $dn , @_ );
 	$mesg->code && confess $mesg->error;
 }
@@ -218,11 +223,12 @@ sub write_attributes {
 	my $modifications = {};
 
 	for my $attribute ( keys %attributes ) {
+		#iterate over each attribute, then over each of its values, then see if there is a match
 		if( grep { ( $_ eq $attribute ) && grep { $attributes{ $attribute } eq $_ } ( $entry->get_value( $attribute ) ) } ( $entry->attributes) ) {
-			#say STDERR "\t$attribute already set";
+			$DEBUG && say STDERR "\t\t$attribute already set";
 		}
 		else {
-			#say STDERR "\tsetting $attribute = ".$attributes{ $attribute };
+			$DEBUG && say STDERR "\t\tsetting $attribute = ".$attributes{ $attribute };
 			$modifications->{ $attribute } = $attributes{ $attribute } ;
 		}		
 	}
