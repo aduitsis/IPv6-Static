@@ -18,12 +18,14 @@ use Storable qw(nstore retrieve);
 use Getopt::Long;
 use Heuristics;
 use DBHelper;
+use Accounting;
 use Pod::Usage;
 use IPv6::Static;
 use Pools;
 use POSIX;
 use Carp;
 use Term::ANSIColor qw(:constants);
+use autodie qw(open close);
 
 
 if( -t STDERR ) {
@@ -41,19 +43,35 @@ my $yes;
 my $help;
 my $dry;
 my $skip;
+my $accounts_per_unit_limit = 3;
 
 my $all;
 
 my $usernames_file;
+my $save_usernames_file;
 
-GetOptions('help|?'=> \$help, 'd|debug' => \$DEBUG , 's|save|store=s' => \$save_filename , 'l|load=s' => \$load_filename , 'delete' => \$delete , 'yes|y' => \$yes, 'n' => \$dry , 'usernames|username|accounting|acct=s' => \$usernames_file , 'all' => \$all, 'skip' => \$skip );
+GetOptions(
+	'help|?'=> \$help, 
+	'd|debug' => \$DEBUG , 
+	's|save|store=s' => \$save_filename, 
+	'l|load=s' => \$load_filename, 
+	'delete' => \$delete , 
+	'yes|y' => \$yes, 
+	'n' => \$dry , 
+	'usernames|username|accounting|acct:s' => \$usernames_file , 
+	'all' => \$all, 
+	'skip' => \$skip, 
+	'accounts_per_unit_limit=i' => \$accounts_per_unit_limit, 
+	'save_usernames_file|save_usernames=s' => \$save_usernames_file,
+);
 
 pod2usage(-verbose => 2) if $help;
 
 binmode STDOUT, ":encoding(utf8)";
 binmode STDERR, ":encoding(utf8)";
 
-my $ldap = LDAPHelper->new( DEBUG => 1 );
+my $robust_delete = defined( $load_filename )? 1 : 0;
+my $ldap = LDAPHelper->new( DEBUG => 1 , robust_delete => $robust_delete );
 
 my $exact_unit;
 if( defined( $exact_unit = shift ) ) {
@@ -71,7 +89,9 @@ my $p = Pools->new( db_connect );
 
 my %acct_usernames;
 my $have_accounting;
+
 if( $usernames_file ) {
+	say STDERR BOLD BLACK "Retrieving accounting from $usernames_file ... ";
 	open(my $file,'<',$usernames_file ) or confess $!;
 	for(<$file>) {
 		chomp;
@@ -80,17 +100,41 @@ if( $usernames_file ) {
 	$have_accounting = 1;
 	close $file;
 }
+elsif( defined($usernames_file) && ( $usernames_file eq '' ) ) {
+	say STDERR BOLD BLACK "Retrieving accounting directly ... this will take a while";
+	%acct_usernames = ( map { $_ => 1 } @{ &Accounting::get_usernames } );
+	$have_accounting = 1;
+	if( $save_usernames_file ) {
+		say STDERR BOLD BLACK "Saving a copy in $save_usernames_file";
+		open( my $output_usernames, '>' , $save_usernames_file );
+		for( sort keys %acct_usernames ) {
+			say { $output_usernames } $_
+		}
+		close $output_usernames;
+	}
+}
+else {
+	say STDERR BOLD BLACK "No accounting records available...will try to best guess"
+}		
 
-#p %acct_usernames;
-	
+if( $have_accounting && ( scalar keys %acct_usernames <= 1 ) ) {
+	say STDERR BOLD RED "Too few usernames in accounting...this is probably a serious error ... aborting";
+	exit
+}
+
 my $units; 
+
+if ( defined( $load_filename ) && defined( $save_filename ) ) {
+	say STDERR "Please do not use both the -s and the -l options at the same time";
+	exit
+}
 
 if( defined( $load_filename ) ) {
 	say STDERR BOLD BLACK 'loading LDAP units from '.$load_filename;
 	$units = retrieve( $load_filename ) ;
 } 
 else {
-	say STDERR BOLD BLACK 'retrieving units from LDAP';
+	say STDERR BOLD BLACK 'retrieving units from LDAP (this will probably take a while)';
 	$units = $ldap->get_combination ;
 }
 
@@ -98,6 +142,7 @@ if ( defined( $save_filename ) ) {
 	say STDERR BOLD BLACK 'saving units into '.$save_filename;
 	nstore($units,$save_filename)
 }
+
 
 
 my %counter;
@@ -125,7 +170,7 @@ for my $unit (keys %{ $units } ) {
 	# warn if there are non-ascii characters in the unit name
 	if ( $unit =~ /\P{ASCII}/ ) {
 		say STDERR RED "\tWARNING: '$unit' contains non-ASCII characters";
-		#push @{ $statistics->{ 'units with non-ASCII characters in DN' } }, $unit;
+		push @{ $statistics->{ 'units with non-ASCII characters in DN' } }, $unit;
 	}
 
 	# classify the unit using the Heuristics library
@@ -134,6 +179,7 @@ for my $unit (keys %{ $units } ) {
 	};
 	if( $@ ) {
 		say STDERR RED "WARNING: Cannot classify $unit.\nSkipping to the next unit.\n\tError returned follows:\n $@";
+		push @{ $statistics->{ 'unclassifiable units' } }, $unit;
 		next UNIT
 	} 
 
@@ -141,20 +187,20 @@ for my $unit (keys %{ $units } ) {
 	my $category = DBHelper::categorize( $cat ) // confess 'internal error';
 	say STDERR YELLOW "\t$category";
 
-	$statistics->{ 'unit category count' }->{ $category }++;
+	$statistics->{ 'units per category' }->{ $category }++;
 
 	my @accounts = @{ $units->{ $unit }->{accounts} };
 
 
-	$statistics->{ 'overall accounts in directory'} += scalar( @accounts );
-	$statistics->{'overall accounts per unit'}->{ scalar( @accounts ) }++;
+	$statistics->{ 'overall number of accounts in directory'} += scalar( @accounts );
+	$statistics->{'accounts per unit distribution in directory'}->{ scalar( @accounts ) }++;
 
 	my @used_accounts;
 	my $all_accounts_same_prefix = 0;
 
 	if( @accounts == 0 ) { 
 		say STDERR RED "\tWARNING: unit $unit has no accounts";
-		say STDERR '';
+		push @{ $statistics->{ 'units with no accounts in directory' } }, $unit;
 		next UNIT;
 	}
 
@@ -169,14 +215,14 @@ for my $unit (keys %{ $units } ) {
 			@used_accounts = grep { $acct_usernames{ $_->{uid} } } @accounts;
 			push @{ $account_in_use{ scalar @used_accounts } }, $unit;
 			
-			$statistics->{'accounting accounts'} += scalar @used_accounts;
-			$statistics->{'accounting accounts per unit'}->{ scalar @used_accounts }++;
+			$statistics->{'overall used accounts'} += scalar @used_accounts;
+			$statistics->{'used accounts per unit distribution'}->{ scalar @used_accounts }++;
 
 			if( ! @used_accounts ) { 
 				say STDERR YELLOW "\tNo accounting for any known account ... will apply the same prefixes to all accounts";
 				$all_accounts_same_prefix = 1;
 				@used_accounts = @accounts;
-
+				$statistics->{'units with no accounting for any account'} += 1;
 			} 
 			elsif( @used_accounts > 1 ) {
 				# we only wanted one account, but we got more than 1
@@ -204,18 +250,18 @@ for my $unit (keys %{ $units } ) {
 
 		say STDERR BOLD BLACK "\tused accounts: ".YELLOW.join ' , ',map { $_->{uid} } @used_accounts;
 
-		if( @used_accounts > 3 && ! $all_accounts_same_prefix ) {
-			push @{ $statistics->{'units exceeding account limit'} },$unit;
-			say STDERR BOLD RED "\tERROR: account limit 4 exceeded (found ".scalar(@used_accounts).") for $unit";
+		if( ( @used_accounts > $accounts_per_unit_limit ) && ( ! $all_accounts_same_prefix ) ) {
+			$statistics->{'units exceeding account limit of '.$accounts_per_unit_limit}->{ $unit } = scalar @used_accounts;
+			say STDERR BOLD RED "\tERROR: account limit $accounts_per_unit_limit exceeded (found ".scalar(@used_accounts).") for $unit";
 			say STDERR '';
 			next UNIT;
 		}
 
 	}		
 
-	$statistics->{'effective accounts'} += scalar @used_accounts;
-	$statistics->{'effective acounts per unit'}->{ scalar @used_accounts }++;
-	$statistics->{'effective acounts per category'}->{ $category } += scalar @used_accounts;
+	$statistics->{'used accounts'} += scalar @used_accounts;
+	$statistics->{'used acounts per unit'}->{ scalar @used_accounts }++;
+	$statistics->{'used acounts per category'}->{ $category } += scalar @used_accounts;
 
 	my @unused_accounts = grep { my $a = $_; ! grep { $_->{uid} eq $a->{uid} } @used_accounts } @accounts;
 
@@ -251,6 +297,7 @@ for my $unit (keys %{ $units } ) {
 		 	$statistics->{'accounts found for the first time'}++;
 		}
 		else {
+			$statistics->{'accounts already known to us'}++;
 			my $db_category = $p->get_category( $uid );
 			if( $db_category eq $category ) {
 				say STDERR BOLD BLACK "\t\trecord already exists in database in the correct category";
@@ -268,7 +315,7 @@ for my $unit (keys %{ $units } ) {
 					say STDERR RED "\t\t$uid of $db_category should be deleted but we are on dry run mode";
 					next ACCOUNT
 				}
-				push @{ $statistics->{ 'accounts that changed category' } }, $uid;
+				$statistics->{ 'accounts that changed category' }->{ $uid } = "from $db_category to $category";
 			}
 		}
 	
@@ -286,6 +333,12 @@ for my $unit (keys %{ $units } ) {
 	for my $account ( @unused_accounts ) {
 		say STDERR CYAN "\t\t".'DELETE: all prefixes of '.$account->{uid}.' in the directory';
 		if( $yes ) {
+			# if we are using a cached copy of the LDAP, we may eventually
+			# try to delete something that has already been deleted in the
+			# real LDAP. So we need to make sure that there actually is
+			# an attibute before we try to delete it. So we will set it to
+			# a dummy value and then delete it right after
+
 			$ldap->delete_attributes( $account->{ ldap_object } , 'radiusFramedIPv6Prefix', 'radiusDelegatedIPv6Prefix' );
 		}
 	}
@@ -372,11 +425,25 @@ Enable debug output
 Actually work on all the units that can be found in the directory.
 
 
-=item B<--usernames FILE>
+=item B<--usernames [FILE]>
 
-Read a usernames that have been used from FILE. FILE is line separated,
-one line per username. Typically, these usernames will be used to cross
-reference which of the accounts have actually been used.
+Try to ascertain which accounts are actually used by looking at actual
+accounting records. 
+
+If this option is used without a password, the program will try to read
+settings from the etc/accounting.rc and connect to an appropriate 
+accounting database/table and retrieve the usernames.
+
+If FILE is supplied, read a usernames that have been used from FILE. 
+FILE is line separated, one line per username. Typically, these usernames 
+will be used to cross reference which of the accounts have actually been 
+used.
+
+=item B<--save_usernames FILE>
+
+If the --usernames option is used without the optional argument to retrieve
+the usernames from a database directly, then this option can be used to
+save the retrieved usernames in FILE.
 
 =item B<--delete> 
 
@@ -406,6 +473,12 @@ contents which is stored in FILE. See also -s.
 
 Skip the creation and updating of addresses and go to the deletion phase directly. 
 The B<--delete> option should also be used, otherwise the script will do nothing
+
+=item B<--accounts_per_unit_limit>
+
+Number of used accounts for a unit beyond which the unit will be considered abnormal 
+and a warning will be generated. Default is 3. Note that the unit will still get IPv6 
+prefixes for all the accounts
 
 =back
 

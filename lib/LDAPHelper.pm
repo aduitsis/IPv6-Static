@@ -67,6 +67,8 @@ sub new {
 		$self->{$_} = ( exists $options{ $_ } )? $options{ $_ } : $settings{ $_ } ;
 	}
 
+	$self->{ 'robust_delete' } = 1 if ( $options{ 'robust_delete' } );
+
 	$self->{ldap} = Net::LDAP->new( $self->{uri} , debug => 0 ) or die $!;
 
 	my $mesg = $self->{ldap}->bind( $self->{bind_dn} , password=>$self->{bind_passwd} );
@@ -200,7 +202,7 @@ sub delete_attributes {
 	my $delete_attributes = [];
 	
 	for my $attribute ( @attributes ) {
-		if( grep {  $_ eq $attribute  } ( $entry->attributes) ) {
+		if( grep {  $_ eq $attribute  } ( $entry->attributes ) ) {
 			push @{$delete_attributes}, $attribute;
 			say STDERR "\t\tdeleting $attribute";
 		}
@@ -209,6 +211,12 @@ sub delete_attributes {
 		}
 	}
 		
+	if ( $self->{ robust_delete } ) {
+		my $replacements = { map { $_ => 'dummy' } @{$delete_attributes} };
+		if( %{ $replacements } ) {
+			$self->modify( $entry, replace => $replacements );
+		}
+	}
 	$self->modify( $entry, delete => $delete_attributes ) if @{ $delete_attributes }; #the array evaluates to true only when there is at least one element
 
 	return 1;
