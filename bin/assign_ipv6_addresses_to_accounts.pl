@@ -215,8 +215,8 @@ for my $unit (keys %{ $units } ) {
 			@used_accounts = grep { $acct_usernames{ $_->{uid} } } @accounts;
 			push @{ $account_in_use{ scalar @used_accounts } }, $unit;
 			
-			$statistics->{'overall used accounts'} += scalar @used_accounts;
-			$statistics->{'used accounts per unit distribution'}->{ scalar @used_accounts }++;
+			# $statistics->{'overall used accounts'} += scalar @used_accounts;
+			# $statistics->{'used accounts per unit distribution'}->{ scalar @used_accounts }++;
 
 			if( ! @used_accounts ) { 
 				say STDERR YELLOW "\tNo accounting for any known account ... will apply the same prefixes to all accounts";
