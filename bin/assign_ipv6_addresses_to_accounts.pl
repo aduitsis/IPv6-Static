@@ -101,7 +101,7 @@ if( $usernames_file ) {
 	close $file;
 }
 elsif( defined($usernames_file) && ( $usernames_file eq '' ) ) {
-	say STDERR BOLD BLACK "Retrieving accounting directly ... this will take a while";
+	say STDERR BOLD BLACK "Retrieving accounting directly ... this will take a while"; 
 	%acct_usernames = ( map { $_ => 1 } @{ &Accounting::get_usernames } );
 	$have_accounting = 1;
 	if( $save_usernames_file ) {
@@ -134,7 +134,7 @@ if( defined( $load_filename ) ) {
 	$units = retrieve( $load_filename ) ;
 } 
 else {
-	say STDERR BOLD BLACK 'retrieving units from LDAP (this will probably take a while)';
+	say STDERR BOLD BLACK 'retrieving units from LDAP (this will probably take a while)' unless defined( $exact_unit );
 	$units = $ldap->get_combination ;
 }
 
